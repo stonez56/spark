@@ -8,3 +8,4 @@ __pycache__
 # Remove audio_catch_data
 audio_cache_data/*.*
 
+chroma_db/*.*

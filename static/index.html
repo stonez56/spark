@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -8,7 +9,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
 
         body {
             background: #0a0a0f;
@@ -38,7 +43,7 @@
             font-weight: 700;
             letter-spacing: 2px;
             color: #00ffff;
-            text-shadow: 0 0 20px rgba(0,255,255,0.5);
+            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
         }
 
         /* ── Model Badge ── */
@@ -46,13 +51,14 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 20px;
             padding: 6px 14px;
             font-size: 13px;
             color: #aaa;
         }
+
         #mode-dot {
             width: 8px;
             height: 8px;
@@ -60,14 +66,28 @@
             background: #00ffff;
             animation: pulse-dot 2s infinite;
         }
-        #mode-dot.cloud { background: #a78bfa; }
-        @keyframes pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+
+        #mode-dot.cloud {
+            background: #a78bfa;
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
 
         /* ── Mode Toggle Buttons ── */
         .btn-config {
             padding: 7px 18px;
             border-radius: 20px;
-            border: 1.5px solid rgba(255,255,255,0.15);
+            border: 1.5px solid rgba(255, 255, 255, 0.15);
             background: transparent;
             color: #aaa;
             font-size: 14px;
@@ -79,7 +99,11 @@
             align-items: center;
             gap: 5px;
         }
-        .btn-config:hover { border-color: #00ffff; color: #00ffff; }
+
+        .btn-config:hover {
+            border-color: #00ffff;
+            color: #00ffff;
+        }
 
         /* ── Face ── */
         #face-wrapper {
@@ -104,39 +128,149 @@
             height: 100%;
         }
 
-        .eye, .mouth { fill: none; stroke: #00ffff; stroke-width: 15; stroke-linecap: round; stroke-linejoin: round; transition: all 0.3s ease-in-out; }
-        .eye-fill { fill: #00ffff; transition: all 0.3s ease-in-out; }
+        .eye,
+        .mouth {
+            fill: none;
+            stroke: #00ffff;
+            stroke-width: 15;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .eye-fill {
+            fill: #00ffff;
+            transition: all 0.3s ease-in-out;
+        }
 
         /* States */
-        .state-Idle .left-eye  { ry:30; rx:40; cy:190; cx:250; }
-        .state-Idle .right-eye { ry:30; rx:40; cy:190; cx:510; }
-        .state-Idle .mouth { d: path("M 330 330 Q 380 345 430 330"); }
-        .state-Idle .left-eye, .state-Idle .right-eye { animation: blink 4s infinite; }
-        @keyframes blink { 0%,95%,100%{ry:30;} 97%{ry:2;} }
+        .state-Idle .left-eye {
+            ry: 30;
+            rx: 40;
+            cy: 190;
+            cx: 250;
+        }
 
-        .state-Listening .left-eye,  .state-Attentive .left-eye  { ry:50; rx:50; cy:180; cx:250; }
-        .state-Listening .right-eye, .state-Attentive .right-eye { ry:50; rx:50; cy:180; cx:510; }
-        .state-Listening .mouth, .state-Attentive .mouth { d: path("M 360 330 Q 380 360 400 330 Q 380 305 360 330"); fill:#00ffff; }
+        .state-Idle .right-eye {
+            ry: 30;
+            rx: 40;
+            cy: 190;
+            cx: 510;
+        }
 
-        .state-Thinking .left-eye  { ry:20; rx:40; cy:180; cx:250; transform-origin:250px 180px; animation: spin-left 2s infinite linear; }
-        .state-Thinking .right-eye { ry:20; rx:40; cy:180; cx:510; transform-origin:510px 180px; animation: spin-right 2s infinite linear; }
-        .state-Thinking .mouth { d: path("M 330 330 Q 360 310 380 330 T 430 330"); }
-        @keyframes spin-left  { 100%{transform:rotate(360deg);}  }
-        @keyframes spin-right { 100%{transform:rotate(-360deg);} }
+        .state-Idle .mouth {
+            d: path("M 330 330 Q 380 345 430 330");
+        }
 
-        .state-Speaking .left-eye  { ry:25; rx:40; cy:190; cx:250; }
-        .state-Speaking .right-eye { ry:25; rx:40; cy:190; cx:510; }
-        .state-Speaking .mouth { d:path("M 300 330 Q 380 330 460 330 Q 380 375 300 330"); fill:#00ffff; animation:talk 0.3s infinite alternate; }
+        .state-Idle .left-eye,
+        .state-Idle .right-eye {
+            animation: blink 4s infinite;
+        }
+
+        @keyframes blink {
+
+            0%,
+            95%,
+            100% {
+                ry: 30;
+            }
+
+            97% {
+                ry: 2;
+            }
+        }
+
+        .state-Listening .left-eye,
+        .state-Attentive .left-eye {
+            ry: 50;
+            rx: 50;
+            cy: 180;
+            cx: 250;
+        }
+
+        .state-Listening .right-eye,
+        .state-Attentive .right-eye {
+            ry: 50;
+            rx: 50;
+            cy: 180;
+            cx: 510;
+        }
+
+        .state-Listening .mouth,
+        .state-Attentive .mouth {
+            d: path("M 360 330 Q 380 360 400 330 Q 380 305 360 330");
+            fill: #00ffff;
+        }
+
+        .state-Thinking .left-eye {
+            ry: 20;
+            rx: 40;
+            cy: 180;
+            cx: 250;
+            transform-origin: 250px 180px;
+            animation: spin-left 2s infinite linear;
+        }
+
+        .state-Thinking .right-eye {
+            ry: 20;
+            rx: 40;
+            cy: 180;
+            cx: 510;
+            transform-origin: 510px 180px;
+            animation: spin-right 2s infinite linear;
+        }
+
+        .state-Thinking .mouth {
+            d: path("M 330 330 Q 360 310 380 330 T 430 330");
+        }
+
+        @keyframes spin-left {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes spin-right {
+            100% {
+                transform: rotate(-360deg);
+            }
+        }
+
+        .state-Speaking .left-eye {
+            ry: 25;
+            rx: 40;
+            cy: 190;
+            cx: 250;
+        }
+
+        .state-Speaking .right-eye {
+            ry: 25;
+            rx: 40;
+            cy: 190;
+            cx: 510;
+        }
+
+        .state-Speaking .mouth {
+            d: path("M 300 330 Q 380 330 460 330 Q 380 375 300 330");
+            fill: #00ffff;
+            animation: talk 0.3s infinite alternate;
+        }
+
         @keyframes talk {
-            0%   { d:path("M 300 330 Q 380 330 460 330 Q 380 345 300 330"); }
-            100% { d:path("M 300 330 Q 380 330 460 330 Q 380 400 300 330"); }
+            0% {
+                d: path("M 300 330 Q 380 330 460 330 Q 380 345 300 330");
+            }
+
+            100% {
+                d: path("M 300 330 Q 380 330 460 330 Q 380 400 300 330");
+            }
         }
 
         /* ── State Label ── */
         #state-label {
             font-size: 15px;
             font-weight: 600;
-            color: rgba(0,255,255,0.5);
+            color: rgba(0, 255, 255, 0.5);
             letter-spacing: 3px;
             text-transform: uppercase;
             margin-top: -8px;
@@ -146,18 +280,21 @@
         /* ── ESC hint ── */
         #esc-hint {
             font-size: 12px;
-            color: rgba(255,255,255,0.2);
+            color: rgba(255, 255, 255, 0.2);
             margin-bottom: 12px;
             transition: color 0.3s;
         }
-        #esc-hint.active { color: rgba(255,100,100,0.7); }
+
+        #esc-hint.active {
+            color: rgba(255, 100, 100, 0.7);
+        }
 
         /* ── Transcript Panel ── */
         #transcript-panel {
             width: 90%;
             max-width: 760px;
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 16px;
             padding: 16px 20px;
             min-height: 90px;
@@ -177,14 +314,22 @@
             font-size: 14px;
             color: #888;
         }
-        .transcript-user span { color: rgba(0,255,255,0.7); font-weight: 600; }
+
+        .transcript-user span {
+            color: rgba(0, 255, 255, 0.7);
+            font-weight: 600;
+        }
 
         .transcript-spark {
             font-size: 16px;
             color: #ddd;
             line-height: 1.5;
         }
-        .transcript-spark span { color: #a78bfa; font-weight: 600; }
+
+        .transcript-spark span {
+            color: #a78bfa;
+            font-weight: 600;
+        }
 
         /* ── Start Button ── */
         #start-btn {
@@ -199,11 +344,16 @@
             margin: 20px 0;
             transition: all 0.2s;
             font-family: inherit;
-            box-shadow: 0 0 30px rgba(0,255,255,0.3);
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
         }
-        #start-btn:hover { transform: scale(1.05); box-shadow: 0 0 40px rgba(0,255,255,0.5); }
+
+        #start-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 40px rgba(0, 255, 255, 0.5);
+        }
     </style>
 </head>
+
 <body>
 
     <!-- Top Bar -->
@@ -218,14 +368,14 @@
         <a href="/config" class="btn-config">⚙️ 設定</a>
     </div>
 
-    <!-- Start Button -->
-    <button id="start-btn" onclick="startSpark()">Enable Microphone &amp; Start Spark</button>
+    <!-- Start Button — shown only if mic permission not yet granted -->
+    <button id="start-btn" onclick="startSpark()" style="display:none;">Enable Microphone &amp; Start Spark</button>
 
     <!-- Face -->
     <div id="face-wrapper" style="display:none;">
         <div id="face-container" class="state-Idle">
             <svg width="760" height="400" viewBox="0 0 760 400">
-                <ellipse class="eye-fill left-eye"  cx="250" cy="190" rx="40" ry="30" />
+                <ellipse class="eye-fill left-eye" cx="250" cy="190" rx="40" ry="30" />
                 <ellipse class="eye-fill right-eye" cx="510" cy="190" rx="40" ry="30" />
                 <path class="mouth" d="M 330 330 Q 380 345 430 330" />
             </svg>
@@ -245,24 +395,16 @@
 
     <script>
         const faceContainer = document.getElementById('face-container');
-        const stateLabel    = document.getElementById('state-label');
-        const startBtn      = document.getElementById('start-btn');
-        const faceWrapper   = document.getElementById('face-wrapper');
-        const escHint       = document.getElementById('esc-hint');
-        const modeDot       = document.getElementById('mode-dot');
-        const modelLabel    = document.getElementById('model-label');
+        const stateLabel = document.getElementById('state-label');
+        const startBtn = document.getElementById('start-btn');
+        const faceWrapper = document.getElementById('face-wrapper');
+        const escHint = document.getElementById('esc-hint');
+        const modeDot = document.getElementById('mode-dot');
+        const modelLabel = document.getElementById('model-label');
         const transcriptRow = document.getElementById('transcript-row');
         let ws;
+        let micStarted = false;  // guard against starting mic twice
 
-        async function startSpark() {
-            // Unsuspend audio context on first click
-            if (playbackContext.state === 'suspended') {
-                await playbackContext.resume();
-            }
-            document.getElementById('start-btn').style.display = 'none';
-            document.getElementById('face-wrapper').style.display = 'flex';
-            connectWebSocket();
-        }
 
         // Current playback source so we can stop it
         let currentSource = null;
@@ -273,7 +415,7 @@
             ws = new WebSocket(`ws://${window.location.host}/ws`);
             ws.binaryType = 'arraybuffer';
 
-            ws.onmessage = async function(event) {
+            ws.onmessage = async function (event) {
                 if (typeof event.data === "string") {
                     const msg = JSON.parse(event.data);
                     if (msg.type === "state") {
@@ -296,7 +438,7 @@
 
         // ── Audio Playback ─────────────────────────
         function playAudio(arrayBuffer) {
-            const int16Array  = new Int16Array(arrayBuffer);
+            const int16Array = new Int16Array(arrayBuffer);
             const float32Array = new Float32Array(int16Array.length);
             for (let i = 0; i < int16Array.length; i++) {
                 float32Array[i] = int16Array[i] / 32768.0;
@@ -304,7 +446,7 @@
             const audioBuffer = playbackContext.createBuffer(1, float32Array.length, 22050);
             audioBuffer.copyToChannel(float32Array, 0);
 
-            if (currentSource) { try { currentSource.stop(); } catch(e){} }
+            if (currentSource) { try { currentSource.stop(); } catch (e) { } }
             currentSource = playbackContext.createBufferSource();
             currentSource.buffer = audioBuffer;
             currentSource.connect(playbackContext.destination);
@@ -314,11 +456,11 @@
         // ── ESC Key → Stop Audio ──────────────────
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && currentSource) {
-                try { currentSource.stop(); } catch(e){}
+                try { currentSource.stop(); } catch (e) { }
                 currentSource = null;
                 // Tell server to stop waiting
                 if (ws && ws.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({type: 'stop_audio'}));
+                    ws.send(JSON.stringify({ type: 'stop_audio' }));
                 }
             }
         });
@@ -328,8 +470,8 @@
             const shortModel = model.split('/').pop().split(':')[0];
             modelLabel.innerText = `${mode} · ${shortModel}`;
             modeDot.className = mode === 'cloud' ? 'cloud' : '';
-            document.getElementById('btn-local').className = 'mode-btn' + (mode==='local' ? ' active-local' : '');
-            document.getElementById('btn-cloud').className = 'mode-btn' + (mode==='cloud' ? ' active-cloud' : '');
+            document.getElementById('btn-local').className = 'mode-btn' + (mode === 'local' ? ' active-local' : '');
+            document.getElementById('btn-cloud').className = 'mode-btn' + (mode === 'cloud' ? ' active-cloud' : '');
         }
 
         // ── Transcript Update ─────────────────────
@@ -341,7 +483,7 @@
         }
 
         function escapeHtml(str) {
-            return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
         // ── Poll status for model badge on load ──
@@ -350,13 +492,15 @@
                 const res = await fetch('/api/status');
                 const data = await res.json();
                 updateModelBadge(data.mode, data.model);
-            } catch(e){}
+            } catch (e) { }
         }
 
         // ── Start Spark ───────────────────────────
         async function startSpark() {
+            if (micStarted) return;  // prevent double-init
             try {
                 const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                micStarted = true;
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                 const source = audioCtx.createMediaStreamSource(mediaStream);
                 const processor = audioCtx.createScriptProcessor(2048, 1, 1);
@@ -376,24 +520,36 @@
                 processor.connect(audioCtx.destination);
 
                 startBtn.style.display = 'none';
-                faceWrapper.style.display = 'block';
-                remindersPanel.style.display = 'block';
-                settingsPanel.style.display = 'block';
-                loadReminders();
-                loadSettings();
-                connectWebSocket();
+                faceWrapper.style.display = 'flex';
                 faceWrapper.style.flexDirection = 'column';
                 faceWrapper.style.alignItems = 'center';
 
             } catch (err) {
-                alert("Microphone access denied. Please allow access and reload.");
+                // Mic permission was denied — show the button so user can retry
+                startBtn.style.display = 'block';
+                alert('麥克風存取被拒絕，請允許後重新整理頁面。');
             }
         }
 
-        // Init — poll status immediately so badge is correct even after navigating from /config
+        async function tryAutoStart() {
+            // Check if permission was already granted — if so, start silently
+            try {
+                const perm = await navigator.permissions.query({ name: 'microphone' });
+                if (perm.state === 'granted') {
+                    await startSpark();
+                    return;
+                }
+            } catch (e) { /* permissions API not available */ }
+            // Else show the start button and wait for user click
+            startBtn.style.display = 'block';
+        }
+
+        // Init — poll status immediately; auto-start mic if already permitted
         pollStatus();
         connectWebSocket();
-        setInterval(pollStatus, 30000); // also refresh every 30s
+        tryAutoStart();
+        setInterval(pollStatus, 30000);
     </script>
 </body>
+
 </html>
