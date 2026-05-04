@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Spark Settings</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #0a0a0f;
+            font-family: "Inter", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+            color: #e0e0e0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            width: 100vw;
+            overflow-x: hidden;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            font-size: 24px;
+            color: #00ffff;
+            letter-spacing: 1px;
+        }
+        .btn-back {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: 0.2s;
+        }
+        .btn-back:hover { background: rgba(255,255,255,0.2); }
+
+        /* ── Panels ── */
+        .panel {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .panel h2 {
+            font-size: 18px;
+            color: #a78bfa;
+            margin-bottom: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 8px;
+        }
+
+        /* ── Forms ── */
+        .form-group {
+            margin-bottom: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .form-group label {
+            font-size: 14px;
+            color: #aaa;
+        }
+        input[type="text"], input[type="date"] {
+            background: #222;
+            color: white;
+            border: 1px solid #444;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 15px;
+            width: 100%;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #00ffff, #0099cc);
+            color: #0a0a0f;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-danger {
+            background: #cc0000;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        /* ── Checkboxes ── */
+        .checkbox-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .checkbox-label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: #222;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 13px;
+            cursor: pointer;
+            border: 1px solid #444;
+        }
+        .checkbox-label:has(input:checked) {
+            background: rgba(0, 255, 255, 0.1);
+            border-color: #00ffff;
+            color: #00ffff;
+        }
+        .checkbox-label input { display: none; }
+
+        /* ── Reminders List ── */
+        .reminder-item {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.05);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .reminder-info { flex: 1; }
+        .reminder-title { font-weight: 600; font-size: 15px; color: #fff; margin-bottom: 4px; }
+        .reminder-desc { font-size: 13px; color: #888; }
+        
+        .spinner {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #00ffff;
+            animation: spin 1s infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Mode Toggle Buttons ── */
+        .mode-buttons { display: flex; gap: 8px; margin-top: 10px; }
+        .mode-btn {
+            flex: 1;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1.5px solid rgba(255,255,255,0.15);
+            background: transparent;
+            color: #aaa;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mode-btn.active-local { border-color: #00ffff; color: #00ffff; background: rgba(0,255,255,0.08); }
+        .mode-btn.active-cloud { border-color: #a78bfa; color: #a78bfa; background: rgba(167,139,250,0.08); }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>系統設定 (Settings)</h1>
+        <a href="/" class="btn-back">🔙 返回大廳</a>
+    </div>
+
+    <!-- Mode Settings -->
+    <div class="panel">
+        <h2>🤖 核心模式切換 (Mode)</h2>
+        <div class="mode-buttons">
+            <button class="mode-btn active-local" id="btn-local" onclick="setMode('local')">⚡ Local 邊緣運算</button>
+            <button class="mode-btn" id="btn-cloud" onclick="setMode('cloud')">☁ Cloud 雲端大模型</button>
+        </div>
+    </div>
+
+    <!-- Personalization Settings -->
+    <div class="panel">
+        <h2>👤 稱呼設定 (Personalization)</h2>
+        <div class="form-group">
+            <label>被照護者稱呼</label>
+            <input type="text" id="patient-name" placeholder="例如: 阿公, 阿媽, 王伯伯">
+        </div>
+        <div class="form-group">
+            <label>機器人/家屬稱呼</label>
+            <input type="text" id="caregiver-name" placeholder="例如: 小星, 阿忠, 小麗">
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top: 10px;">
+            <button class="btn-primary" id="save-settings-btn" onclick="saveSettings()">儲存設定</button>
+            <div id="settings-spinner" class="spinner"></div>
+            <span id="settings-msg" style="font-size:13px; display:none;"></span>
+        </div>
+    </div>
+
+    <!-- Reminders Panel -->
+    <div class="panel">
+        <h2>⏰ 醫療級排程提醒 (Advanced Reminders)</h2>
+        <div id="reminders-list" style="margin-bottom: 20px;"></div>
+        
+        <div style="background: rgba(0,0,0,0.5); padding: 16px; border-radius: 8px;">
+            <h3 style="font-size: 15px; color:#ddd; margin-bottom: 12px;">➕ 新增提醒</h3>
+            
+            <div class="form-group">
+                <label>提醒內容 (Message)</label>
+                <input type="text" id="new-rem-msg" placeholder="例如: 阿公吃高血壓藥囉">
+            </div>
+            
+            <div class="form-group">
+                <label>觸發時段 (Time Slots) - 用逗號分隔多個時段</label>
+                <input type="text" id="new-rem-times" placeholder="例如: 08:00, 13:00, 18:00">
+            </div>
+            
+            <div class="form-group">
+                <label>重複星期 (Days of Week)</label>
+                <div class="checkbox-group" id="days-group">
+                    <label class="checkbox-label"><input type="checkbox" value="1" checked>一</label>
+                    <label class="checkbox-label"><input type="checkbox" value="2" checked>二</label>
+                    <label class="checkbox-label"><input type="checkbox" value="3" checked>三</label>
+                    <label class="checkbox-label"><input type="checkbox" value="4" checked>四</label>
+                    <label class="checkbox-label"><input type="checkbox" value="5" checked>五</label>
+                    <label class="checkbox-label"><input type="checkbox" value="6" checked>六</label>
+                    <label class="checkbox-label"><input type="checkbox" value="0" checked>日</label>
+                </div>
+            </div>
+            
+            <div style="display:flex; gap:10px;">
+                <div class="form-group" style="flex:1;">
+                    <label>開始日期 (選填)</label>
+                    <input type="date" id="new-rem-start">
+                </div>
+                <div class="form-group" style="flex:1;">
+                    <label>結束日期 (選填)</label>
+                    <input type="date" id="new-rem-end">
+                </div>
+            </div>
+            
+            <button class="btn-primary" onclick="addReminder()" style="width:100%; margin-top:10px;">儲存提醒</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    // --- Mode Logic ---
+    async function fetchStatus() {
+        try {
+            const res = await fetch('/api/status');
+            const data = await res.json();
+            updateModeButtons(data.mode);
+        } catch(e) {}
+    }
+    async function setMode(mode) {
+        try {
+            await fetch('/api/set-mode', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({mode})
+            });
+            updateModeButtons(mode);
+        } catch(e) { console.error(e); }
+    }
+    function updateModeButtons(mode) {
+        document.getElementById('btn-local').className = 'mode-btn' + (mode==='local' ? ' active-local' : '');
+        document.getElementById('btn-cloud').className = 'mode-btn' + (mode==='cloud' ? ' active-cloud' : '');
+    }
+
+    // --- Settings Logic ---
+    async function loadSettings() {
+        try {
+            const res = await fetch('/api/settings');
+            const data = await res.json();
+            document.getElementById('patient-name').value = data.patient_name || '';
+            document.getElementById('caregiver-name').value = data.caregiver_name || '';
+        } catch(e) { console.error(e); }
+    }
+    async function saveSettings() {
+        const patient = document.getElementById('patient-name').value;
+        const caregiver = document.getElementById('caregiver-name').value;
+        
+        const btn = document.getElementById('save-settings-btn');
+        const spinner = document.getElementById('settings-spinner');
+        const msg = document.getElementById('settings-msg');
+        
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        spinner.style.display = 'block';
+        msg.style.display = 'inline';
+        msg.style.color = '#ffcc00';
+        msg.innerText = '正在為長輩重新合成專屬語音，請稍候...';
+        
+        try {
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers:{'Content-Type': 'application/json'},
+                body: JSON.stringify({patient_name: patient, caregiver_name: caregiver})
+            });
+            await new Promise(r => setTimeout(r, 5000));
+            msg.style.color = '#00ffff';
+            msg.innerText = '語音快取成功儲存！';
+        } catch(e) {
+            msg.style.color = '#ff4444';
+            msg.innerText = '儲存失敗';
+        } finally {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            spinner.style.display = 'none';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        }
+    }
+
+    // --- Reminders Logic ---
+    const dayMap = {'1':'一', '2':'二', '3':'三', '4':'四', '5':'五', '6':'六', '0':'日'};
+    
+    async function loadReminders() {
+        try {
+            const res = await fetch('/api/reminders');
+            const data = await res.json();
+            const list = document.getElementById('reminders-list');
+            list.innerHTML = '';
+            
+            if(data.length === 0) {
+                list.innerHTML = '<div style="color:#666; font-size:14px;">目前沒有設定任何提醒。</div>';
+                return;
+            }
+            
+            data.forEach(rem => {
+                const daysText = rem.days_of_week.split(',').map(d => dayMap[d.trim()]).join('、');
+                const dateText = (rem.start_date || rem.end_date) ? 
+                    `[${rem.start_date||'--'} ~ ${rem.end_date||'--'}]` : '永久有效';
+                
+                const div = document.createElement('div');
+                div.className = 'reminder-item';
+                div.innerHTML = `
+                    <div class="reminder-info">
+                        <div class="reminder-title">${rem.message}</div>
+                        <div class="reminder-desc">
+                            ⏰ ${rem.times} <br>
+                            📅 每週${daysText} (${dateText})
+                        </div>
+                    </div>
+                    <button class="btn-danger" onclick="deleteReminder(${rem.id})">刪除</button>
+                `;
+                list.appendChild(div);
+            });
+        } catch(e) { console.error(e); }
+    }
+
+    async function addReminder() {
+        const msg = document.getElementById('new-rem-msg').value;
+        const times = document.getElementById('new-rem-times').value;
+        const start = document.getElementById('new-rem-start').value;
+        const end = document.getElementById('new-rem-end').value;
+        
+        // Get checked days
+        const checkedDays = Array.from(document.querySelectorAll('#days-group input:checked')).map(cb => cb.value);
+        if(checkedDays.length === 0) {
+            alert('至少需勾選一天'); return;
+        }
+        
+        if(!msg || !times) {
+            alert('請填寫提醒內容與時間'); return;
+        }
+
+        const payload = {
+            message: msg,
+            times: times,
+            days_of_week: checkedDays.join(','),
+            start_date: start || null,
+            end_date: end || null,
+            is_active: true
+        };
+
+        await fetch('/api/reminders', {
+            method: 'POST',
+            headers:{'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        
+        document.getElementById('new-rem-msg').value = '';
+        document.getElementById('new-rem-times').value = '';
+        loadReminders();
+    }
+
+    async function deleteReminder(id) {
+        if(confirm('確定要刪除這個提醒嗎？')) {
+            await fetch(`/api/reminders/${id}`, { method: 'DELETE' });
+            loadReminders();
+        }
+    }
+
+    // Init
+    fetchStatus();
+    loadSettings();
+    loadReminders();
+</script>
+
+</body>
+</html>

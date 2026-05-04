@@ -1,0 +1,10 @@
+.env
+./memory
+__pycache__
+
+#Ignore all voice files
+*.onnx
+
+# Remove audio_catch_data
+audio_cache_data/*.*
+
