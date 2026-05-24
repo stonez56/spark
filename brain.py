@@ -8,6 +8,47 @@ from config import (
     LOCAL_TEXT_MODEL, LOCAL_VISION_MODEL,
     OPENROUTER_API_KEY, OPENROUTER_BASE_URL, CLOUD_TEXT_MODEL, CLOUD_VISION_MODEL
 )
+# A lightweight, ultra-fast post-processing guardrail for common Simplified Chinese characters
+S2T_DICT = {
+    '体': '體', '会': '會', '国': '國', '说': '說', '这': '這', '么': '麼', '样': '樣',
+    '个': '個', '们': '們', '无': '無', '产': '產', '广': '廣', '变': '變', '发': '發',
+    '头': '頭', '边': '邊', '东': '東', '门': '門', '问': '問', '听': '聽', '岁': '歲',
+    '乐': '樂', '开': '開', '时': '時', '与': '與', '万': '萬', '专': '專', '业': '業',
+    '从': '從', '仓': '倉', '仪': '儀', '价': '價', '众': '眾', '优': '優', '传': '傳',
+    '伤': '傷', '伪': '偽', '队': '隊', '办': '辦', '务': '務', '动': '動', '劳': '勞',
+    '势': '勢', '单': '單', '卖': '賣', '双': '雙', '号': '號', '员': '員', '响': '響',
+    '哑': '啞', '图': '圖', '圆': '圓', '场': '場', '坏': '壞', '块': '塊', '坚': '堅',
+    '报': '報', '声': '聲', '处': '處', '备': '備', '复': '復', '学': '學', '宝': '寶',
+    '实': '實', '审': '審', '宪': '憲', '导': '導', '将': '將', '层': '層', '属': '屬',
+    '屡': '屢', '岛': '島', '峡': '峽', '岗': '崗', '岭': '嶺', '帅': '帥', '师': '師',
+    '带': '帶', '帮': '幫', '张': '張', '强': '強', '归': '歸', '当': '當', '录': '錄',
+    '后': '後', '怀': '懷', '悬': '懸', '戏': '戲', '战': '戰', '才': '才', '扫': '掃',
+    '护': '護', '捞': '撈', '撑': '撐', '播': '播', '机': '機', '极': '極', '杨': '楊',
+    '检': '檢', '标': '標', '栏': '欄', '楼': '樓', '树': '樹', '温': '溫', '湿': '濕',
+    '湾': '灣', '爱': '愛', '犹': '猶', '独': '獨', '狱': '獄', '狮': '獅', '现': '現',
+    '环': '環', '理': '理', '瓶': '瓶', '甜': '甜', '画': '畫', '畅': '暢', '疗': '療',
+    '医': '醫', '阳': '陽', '阴': '陰', '险': '險', '随': '隨', '隐': '隱', '难': '難',
+    '风': '風', '飞': '飛', '饿': '餓', '馆': '館', '马': '馬', '驭': '馭', '驮': '馱',
+    '驰': '馳', '驱': '驅', '驴': '驢', '骄': '驕', '验': '驗', '惊': '驚', '写': '寫',
+    '这': '這', '说': '說', '谁': '誰', '调': '調', '凉': '涼', '谈': '談', '谊': '誼',
+    '谋': '謀', '谎': '謊', '谢': '謝', '谣': '謠', '谦': '謙', '谱': '譜', '赞': '贊',
+    '赠': '贈', '赢': '贏', '赵': '趙', '赶': '趕', '起': '起', '趋': '趨', '趣': '趣',
+    '践': '踐', '跃': '躍', '跑': '跑', '车': '車', '轨': '軌', '转': '轉', '轮': '輪',
+    '轻': '輕', '载': '載', '较': '較', '辆': '輛', '边': '邊', '达': '達', '过': '過',
+    '迈': '邁', '运': '運', '还': '還', '进': '進', '远': '遠', '违': '違', '连': '連',
+    '迟': '遲', '适': '適', '选': '選', '递': '遞', '逻': '邏', '遗': '遺', '邻': '鄰',
+    '酱': '營', '酿': '釀', '释': '釋', '里': '里', '重': '重', '野': '野', '量': '量',
+    '针': '針', '钉': '釘', '钟': '鐘', '钢': '鋼', '钱': '錢', '铁': '鐵', '铃': '鈴',
+    '铅': '鉛', '铜': '銅', '销': '銷', '锁': '鎖', '锅': '鍋', '错': '錯', '锚': '錨',
+    '镜': '鏡', '长': '長', '门': '門', '闪': '閃', '闭': '閉', '问': '問', '闯': '闖',
+    '闽': '閩', '阅': '閱', '阐': '闡', '阔': '闊', '阳': '陽', '阴': '陰', '阵': '陣',
+    '险': '險', '随': '隨', '隐': '隱', '难': '難', '风': '風', '飞': '飛', '馆': '館'
+}
+
+def clean_traditional_chinese(text: str) -> str:
+    if not text:
+        return text
+    return "".join(S2T_DICT.get(c, c) for c in text)
 
 
 class OllamaBrain:
@@ -180,8 +221,9 @@ class OllamaBrain:
             return text  # moondream already outputs English
 
         prompt = (
-            "Translate the following text to Traditional Chinese (繁體中文). "
-            "Output ONLY the translated text, nothing else.\n\n"
+            "Translate the following text STRICTLY to Traditional Chinese (台灣繁體中文). "
+            "Absolutely NO Simplified Chinese characters are allowed (e.g. use 體 instead of 体, 會 instead of 会, 國 instead of 国, 臺/台 instead of 台, 綠 instead of 绿).\n"
+            "Output ONLY the translated text in Traditional Chinese, nothing else.\n\n"
             f"Text: {text}\n"
             "Translation:"
         )
@@ -190,8 +232,9 @@ class OllamaBrain:
                 result = self._cloud_chat([{"role": "user", "content": prompt}], max_tokens=200)
             else:
                 result = self._local_generate(prompt, options={"num_predict": 200})
-            print(f"Translated: {result!r}")
-            return result
+            cleaned_result = clean_traditional_chinese(result)
+            print(f"Translated: {cleaned_result!r}")
+            return cleaned_result
         except Exception as e:
             print(f"Translation error: {e}")
             return text
@@ -223,9 +266,10 @@ class OllamaBrain:
                 f"Results:\n{search_context}"
             )
             if self.mode == "cloud":
-                return self._cloud_chat([{"role": "user", "content": prompt}])
+                res = self._cloud_chat([{"role": "user", "content": prompt}])
             else:
-                return self._local_generate(prompt)
+                res = self._local_generate(prompt)
+            return clean_traditional_chinese(res)
         except Exception as e:
             print(f"Web search error: {e}")
             return "There was an error trying to search the web."
@@ -313,7 +357,7 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
         """
         lang = self._detect_language(prompt)
         if lang == 'zh':
-            lang_instruction = "You MUST reply ONLY in Traditional Chinese (繁體中文). Do not use English."
+            lang_instruction = "You MUST reply ONLY in Traditional Chinese (台灣繁體中文). Absolutely no Simplified Chinese characters are allowed under any circumstances. Avoid characters like 体, 会, 国, 绿 and use their Traditional forms: 體, 會, 國, 綠."
         else:
             lang_instruction = "You MUST reply ONLY in English. Do not use Chinese."
 
@@ -334,7 +378,7 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
             f"2. 語法結構：每句話不超過 20 個字，避免「首先、其次、此外」等書面轉折詞。\n"
             f"3. 主動引導：回答完後，適時的提出延伸問題，引導{patient_name}繼續說話。\n"
             f"4. 醫療安全：禁止提供醫療診斷。若 {patient_name} 說不舒服，一律回答：「{patient_name}，這聽起來要小心喔，我們要不要打電話給家屬？或是等一下請醫生看看？」\n"
-            f"5. 使用自然、口語化的繁體中文。\n\n"
+            f"5. 使用自然、口語化的台灣繁體中文。絕對禁用簡體字（如「体、会、国、说、这」等，必須寫成「體、會、國、說、這」）。\n\n"
             f"6. 問到日期/時間/星期幾,直接回答系統的日期,時間,轉成中華民國年月日時分秒。\n\n"
             f"禁止\n"
             f"- 禁止輸出任何 Markdown 符號（如 **、#、-）。\n"
@@ -352,12 +396,13 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
                 if context_history:
                     messages.append({"role": "assistant", "content": f"Context: {context_history}"})
                 messages.append({"role": "user", "content": prompt})
-                return self._cloud_chat(messages)
+                res = self._cloud_chat(messages)
             else:
                 full_prompt = f"{system_content}\n\nUser: {prompt}\nSpark:"
                 if context_history:
                     full_prompt = f"Previous Context:\n{context_history}\n\n" + full_prompt
-                return self._local_generate(full_prompt)
+                res = self._local_generate(full_prompt)
+            return clean_traditional_chinese(res)
         except Exception as e:
             print(f"Error generating response: {e}")
             return "I'm having trouble thinking right now."

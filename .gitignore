@@ -9,3 +9,9 @@ __pycache__
 audio_cache_data/*.*
 
 chroma_db/*.*
+
+*.db
+.venv
+opencode
+length.bin
+spark_memory.db

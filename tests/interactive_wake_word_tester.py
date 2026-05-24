@@ -1,50 +1,59 @@
 """
-test_wake_word.py — Browser-based wake word tester (no PortAudio needed).
+interactive_wake_word_tester.py — Browser-based wake word tester (no PortAudio needed).
 
-Since this machine's mic is accessed via the browser (not PortAudio/ALSA),
+Since headless/remote machines cannot access the local mic directly via PortAudio,
 this script starts a tiny HTTP + WebSocket server that:
   1. Serves a minimal browser page that opens the mic
   2. Receives audio chunks from the browser via WebSocket
   3. Feeds them to openWakeWord and prints results in real-time
 
 Usage:
-    python test_wake_word.py              # test "alexa" (default)
-    python test_wake_word.py hey_jarvis
-    python test_wake_word.py hey_mycroft
+    python tests/interactive_wake_word_tester.py              # test "alexa" (default)
+    python tests/interactive_wake_word_tester.py hey_jarvis
+    python tests/interactive_wake_word_tester.py hey_mycroft
 
 Then open:  http://localhost:9999/
 """
 
 import sys
 import time
-import threading
 import numpy as np
-import asyncio
 import warnings
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
+import uvicorn
+
 warnings.filterwarnings("ignore")
 
-# ── Config ─────────────────────────────────────────────────────────────────────
 WAKE_WORD  = sys.argv[1] if len(sys.argv) > 1 else "alexa"
 PORT       = 9999
 THRESHOLD  = 0.5
 COOLDOWN   = 2.0   # seconds between detections
 
-# ── Load openWakeWord model ────────────────────────────────────────────────────
-import openwakeword
-from openwakeword.model import Model
+app = FastAPI()
 
-all_paths = openwakeword.get_pretrained_model_paths()
-paths = [p for p in all_paths if WAKE_WORD in p]
+# ── Global Model Reference (loaded lazily to avoid overhead during import) ─────
+oww_model = None
 
-if not paths:
-    print(f"[ERROR] No model found for '{WAKE_WORD}'.")
-    print("Available models:", [p.split("/")[-1].replace(".onnx","") for p in all_paths])
-    sys.exit(1)
+def get_model():
+    global oww_model
+    if oww_model is None:
+        import openwakeword
+        from openwakeword.model import Model
+        
+        all_paths = openwakeword.get_pretrained_model_paths()
+        paths = [p for p in all_paths if WAKE_WORD in p]
 
-print(f"Loading model for '{WAKE_WORD}'...", end="", flush=True)
-oww = Model(wakeword_model_paths=paths)
-oww.predict(np.zeros(1280, dtype=np.int16))  # warmup
-print(" ready!\n")
+        if not paths:
+            print(f"[ERROR] No model found for '{WAKE_WORD}'.")
+            print("Available models:", [p.split("/")[-1].replace(".onnx","") for p in all_paths])
+            sys.exit(1)
+
+        print(f"Loading model for '{WAKE_WORD}'...", end="", flush=True)
+        oww_model = Model(wakeword_model_paths=paths)
+        oww_model.predict(np.zeros(1280, dtype=np.int16))  # warmup
+        print(" ready!\n")
+    return oww_model
 
 # ── HTML page served to browser ────────────────────────────────────────────────
 HTML = f"""<!DOCTYPE html>
@@ -117,13 +126,6 @@ HTML = f"""<!DOCTYPE html>
 </body>
 </html>"""
 
-# ── Async WebSocket + HTTP server ──────────────────────────────────────────────
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
-import uvicorn
-
-app = FastAPI()
-
 @app.get("/")
 async def index():
     return HTMLResponse(HTML)
@@ -134,22 +136,23 @@ last_detected = 0.0
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
     global detect_count, last_detected
+    model = get_model()
     await websocket.accept()
     print(f'Browser connected. Say "{WAKE_WORD}"...')
     try:
         while True:
             data = await websocket.receive_bytes()
             audio = np.frombuffer(data, dtype=np.int16)
-            prediction = oww.predict(audio)
+            prediction = model.predict(audio)
 
             for model_name, score in prediction.items():
                 now = time.time()
-                detected = (score >= THRESHOLD and (now - last_detected) > COOLDOWN)
+                detected = (score >= THRESHOLD and (now - last_detected) > WAKE_WORD_COOLDOWN_SEC) if 'WAKE_WORD_COOLDOWN_SEC' in globals() else (score >= THRESHOLD and (now - last_detected) > COOLDOWN)
 
                 if detected:
                     detect_count += 1
                     last_detected = now
-                    oww.reset()
+                    model.reset()
                     print(f"✅ DETECTED! score={score:.3f}  (#{detect_count})", flush=True)
                 else:
                     bar_len = int(score * 20)
@@ -161,12 +164,15 @@ async def ws_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         print("\nBrowser disconnected.")
 
-# ── Entry point ────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print(f"{'='*50}")
-    print(f"  Wake Word Tester (Browser-based)")
+    print(f"  Interactive Wake Word Tester (Browser-based)")
     print(f"  Keyword   : {WAKE_WORD}")
     print(f"  Threshold : {THRESHOLD}")
     print(f"{'='*50}")
     print(f"\n👉 Open your browser at:  http://localhost:{PORT}/\n")
+    
+    # Load the model explicitly on startup
+    get_model()
+    
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")

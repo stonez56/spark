@@ -20,7 +20,7 @@ load_dotenv()
 # ──────────────────────────────────────────
 # MAIN SWITCH: "local" or "cloud"
 # ──────────────────────────────────────────
-LLM_MODE = "local"
+LLM_MODE = "cloud"
 
 # ──────────────────────────────────────────
 # LOCAL (Ollama) settings
