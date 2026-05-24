@@ -13,6 +13,5 @@ Pillow
 openai
 python-dotenv
 g2pw
-torch
 unicode_rbnf
 sentence-stream
