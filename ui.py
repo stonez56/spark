@@ -32,8 +32,10 @@ current_state = SparkState.IDLE.value
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     connected_clients.add(websocket)
+    print("🟢 [WebSocket] Browser client connected!")
     # Send the current state immediately upon connection
     await websocket.send_text(json.dumps({"type": "state", "value": current_state}))
+    audio_active_printed = False
     try:
         while True:
             data = await websocket.receive()
@@ -50,6 +52,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 except Exception:
                     pass
             elif "bytes" in data:
+                if not audio_active_printed:
+                    print("🎙️ [WebSocket] Audio stream active (receiving microphone data)...")
+                    audio_active_printed = True
                 if app.state.audio_queue:
                     app.state.audio_queue.put(data["bytes"])
     except WebSocketDisconnect:
@@ -57,6 +62,7 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         if websocket in connected_clients:
             connected_clients.remove(websocket)
+        print("🔴 [WebSocket] Browser client disconnected.")
 
 
 @app.post("/api/set-mode")
