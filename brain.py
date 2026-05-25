@@ -336,56 +336,43 @@ class OllamaBrain:
 
     def route_intent(self, user_input: str) -> str:
         """
-        Uses gemma3:1b locally to classify intent (always local for low latency).
-        Returns one of: 'chat', 'take_photo', 'search_web', 'swap_model'
+        Hybrid Intent Routing: 
+        Phase 1: Rule-based matching for 0ms latency on obvious intents.
+        Phase 2: Fallback to local LLM (gemma3:1b) with highly optimized prompt for ambiguous queries.
         """
-        system_prompt = """You are an Intent Router. Reply ONLY with a JSON object {"action": "..."}.
-
-Actions:
-- "chat": General conversation, jokes, facts, date and time queries ("現在幾點", "今天幾月幾號", "今天星期幾"), greetings, or anything else.
-- "take_photo": User wants to see, look, take a photo, describe an image, or identify an object.
-- "search_web": User asks for real-time info — weather, stock prices, news, scores, exchange rates. Do NOT use for general date/time queries like "今天幾號" or "現在幾點".
-- "swap_model": User wants to switch AI models, become smarter, or use a different LLM.
-- "emergency": User reports falling down, chest pain, dizziness, or asks for help ("我跌倒了", "胸口好痛", "救命").
-- "health_query": User reports health metrics (blood pressure) or asks about medication ("我今天量血壓135", "藥要怎麼吃").
-- "daily_checkin": User reports waking up, going for a walk, or daily routines ("我剛睡醒", "我要去散步").
-- "reminiscence": User reminisces about the past ("我以前在糖廠上班", "我小時候啊").
-- "praise_affirmation": User wants praise for good behavior ("我有乖乖吃菜", "我今天走了一千步").
-- "emotional_support": User feels lonely or sad ("我覺得好寂寞", "都沒人來看我").
-- "pet_cat": User wants to pet, rub, or touch the cat, or says nice things ("摸摸你", "好乖", "乖貓咪", "摸摸頭").
-- "temp_analysis": User reports their body temperature or asks the cat to measure/check their temperature ("量體溫", "我體溫36.8度", "量溫度", "幫我量溫度").
-
-Examples (use these as strict anchors):
-User: What's the weather today? → {"action": "search_web"}
-User: 今天天氣如何? → {"action": "search_web"}
-User: What's the TSMC stock price? → {"action": "search_web"}
-User: 台灣股市現在幾點? → {"action": "search_web"}
-User: 今天幾月幾號 → {"action": "chat"}
-User: 現在幾點鐘 → {"action": "chat"}
-User: 今天星期幾 → {"action": "chat"}
-User: Can you see what I am holding? → {"action": "take_photo"}
-User: 拍張照片 → {"action": "take_photo"}
-User: Switch to a smarter model → {"action": "swap_model"}
-User: 切換到更聰明的模型 → {"action": "swap_model"}
-User: Tell me a joke → {"action": "chat"}
-User: 告訴我一個笑話 → {"action": "chat"}
-User: 摸摸頭 → {"action": "pet_cat"}
-User: 乖貓咪 → {"action": "pet_cat"}
-User: 幫我量體溫 → {"action": "temp_analysis"}
-User: 我今天量體溫36.5度 → {"action": "temp_analysis"}
-User: 我跌倒了 → {"action": "emergency"}
-User: 救命啊 → {"action": "emergency"}
-User: 我今天血壓130 → {"action": "health_query"}
-User: 那個藥什麼時候吃 → {"action": "health_query"}
-User: 我要去散步了 → {"action": "daily_checkin"}
-User: 我剛睡醒 → {"action": "daily_checkin"}
-User: 我以前做工的時候啊 → {"action": "reminiscence"}
-User: 我今天有乖乖喝水喔 → {"action": "praise_affirmation"}
-User: 都沒人來陪我 → {"action": "emotional_support"}
-"""
         print(f"Routing intent for: {user_input}")
+        user_input_lower = user_input.lower()
+        
+        # --- Phase 1: Fast Rule-Based Matching ---
+        if any(w in user_input_lower for w in ["跌倒", "痛", "救命", "暈", "不舒服"]):
+            return "emergency"
+        if any(w in user_input_lower for w in ["血壓", "藥", "血糖"]):
+            return "health_query"
+        if any(w in user_input_lower for w in ["體溫", "溫度", "發燒", "量溫度"]):
+            return "temp_analysis"
+        if any(w in user_input_lower for w in ["拍", "看", "這是什麼", "照片"]):
+            return "take_photo"
+        if any(w in user_input_lower for w in ["切換", "模型", "聰明一點", "換一個"]):
+            return "swap_model"
+        if any(w in user_input_lower for w in ["天氣", "股票", "股市", "新聞", "匯率", "台積電"]) and not any(w in user_input_lower for w in ["幾點", "星期", "幾號"]):
+            return "search_web"
+        if any(w in user_input_lower for w in ["散步", "起床", "睡醒", "睡覺"]):
+            return "daily_checkin"
+        if any(w in user_input_lower for w in ["以前", "小時候", "做工的時候", "年輕的時候"]):
+            return "reminiscence"
+        if any(w in user_input_lower for w in ["有乖乖", "我有", "走了", "步"]):
+            return "praise_affirmation"
+        if any(w in user_input_lower for w in ["寂寞", "孤單", "沒人", "陪我"]):
+            return "emotional_support"
+        if any(w in user_input_lower for w in ["摸摸", "乖貓", "可愛", "好乖"]):
+            return "pet_cat"
+            
+        # --- Phase 2: Local LLM Fallback (Optimized for Pi 5) ---
+        print("Falling back to local LLM for intent routing...")
+        system_prompt = """Reply ONLY with JSON {"action":"..."}.
+Actions: chat, take_photo, search_web, swap_model, emergency, health_query, daily_checkin, reminiscence, praise_affirmation, emotional_support, pet_cat, temp_analysis.
+Output no other text."""
         try:
-            # Intent routing always uses local Ollama for minimal latency
             response = ollama.chat(
                 model=LOCAL_TEXT_MODEL,
                 messages=[
@@ -393,13 +380,15 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
                     {'role': 'user', 'content': user_input}
                 ],
                 format='json',
-                keep_alive=-1
+                keep_alive=-1,
+                options={"num_predict": 15, "temperature": 0.0}
             )
             content = response['message']['content']
+            import json
             parsed = json.loads(content)
             return parsed.get("action", "chat")
         except Exception as e:
-            print(f"Intent routing error: {e}")
+            print(f"Intent routing fallback error: {e}")
             return "chat"
 
     # ─────────────────────────────────────────────
@@ -462,7 +451,8 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
 
         from datetime import datetime
         now = datetime.now()
-        time_context = f"Current Date and Time: {now.strftime('%Y-%m-%d %H:%M:%S')}."
+        weekday_str = ["一", "二", "三", "四", "五", "六", "日"][now.weekday()]
+        time_context = f"Current Date and Time: {now.strftime('%Y-%m-%d %H:%M:%S')} (星期{weekday_str})."
 
         # ── 2. 動態大腦人設與長度控制器 (雙軌 system_content 機制) ──
         is_knowledge_query = any(kw in prompt.lower() for kw in ["什麼是", "解釋", "介紹", "如何", "怎麼", "為何", "為什麼", "說明", "llm", "ai", "gpt", "科技", "科普"])
@@ -475,7 +465,8 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
                 f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。語氣傲嬌博學，帶有貓咪特有的親切感，句尾可自然帶有「喵～」或「哼」，口語親切流暢，避免機械化地生硬拼湊詞彙。\n"
                 f"2. 語法結構：因為{patient_name}在向你請教知識，請用簡單、口語化且充滿智慧的語氣，以 60 到 100 字之間詳細且完整地說明該概念，絕對不要中途斷句，也絕對不要敷衍回答！\n"
                 f"3. 主動引導：科普完後，適時提出與該知識相關的貓咪式提問（例如引導{patient_name}想一想，或藉機要{patient_name}去動一動或餵罐罐），引導{patient_name}繼續說話。\n"
-                f"4. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n\n"
+                f"4. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n"
+                f"5. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類(奴才)該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
                 f"禁止\n"
                 f"- 禁止輸出 any Markdown 符號（如 **、#、-）。\n"
                 f"- 禁止使用 Emoji 表情符號（但可以用文字喵～或哼來表現表情）。\n\n"
@@ -491,7 +482,8 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
                 f"2. 語法結構：每句話絕對不超過 20 個字，口氣自然傲嬌、活潑，避免書面語或書面轉折詞（如首先、其次）。\n"
                 f"3. 主動引導：回答完後，適時傲嬌地提出貓咪式提問（引導{patient_name}餵罐罐、摸摸，或起立動一動），引導{patient_name}繼續說話。\n"
                 f"4. 醫療安全與緊張炸毛：禁止提供 any 醫療診斷。若 {patient_name} 說身體不舒服或體溫過高，一律緊張炸毛地回答：「{patient_name}！你熱得像烤番薯/聽起來很不舒服喵！本喵命令你立刻躺下休息，不然本喵要打給醫生或家人囉，聽到沒有喵？！」\n"
-                f"5. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n\n"
+                f"5. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n"
+                f"6. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類(奴才)該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
                 f"禁止\n"
                 f"- 禁止輸出 any Markdown 符號（如 **、#、-）。\n"
                 f"- 禁止使用 Emoji 表情符號（但可以用文字喵～或哼來表現表情）。\n"

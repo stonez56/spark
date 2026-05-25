@@ -15,3 +15,5 @@ chroma_db/*.*
 opencode
 length.bin
 spark_memory.db
+
+mimo_chroma_db/*.*

@@ -37,5 +37,5 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 
 # ── Cloud TEXT & VISION models (using Google Gemini API) ──────────────────
-CLOUD_TEXT_MODEL   = "gemini-2.5-flash"
-CLOUD_VISION_MODEL = "gemini-2.5-flash"
+CLOUD_TEXT_MODEL   = "gemini-1.5-pro"
+CLOUD_VISION_MODEL = "gemini-1.5-pro"

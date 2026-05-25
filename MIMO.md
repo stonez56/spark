@@ -65,4 +65,5 @@ graph TD
 2. **OpenCV 相機防護**：
    如果系統沒有檢測到 CSI 相機或 USB 攝像頭，OpenCV 背景人臉偵測線程會優雅地寫入日誌並關閉追蹤，但保留 API 級別的 Mock 人臉觸發，保證主語音大腦與 reminder scheduler 依然正常工作。
 3. **OpenRouter 429 即時本地降級**：
-   當雲端 OpenRouter API 面臨 upstream rate-limited (429) 或 endpoint 404 時，系統會在 0.1 秒內直接降級為本地運行的 Ollama (`gemma3:1b`)。這不僅避免了冗長的網絡超時，更能確保 100% 的離線高可用性！
+   當雲端 OpenRouter API 面臨 upstream rate-limited (429) 或 endpoint 404 時，系統會在 0.1 秒內直接降級為本地運行的 Ollama (`gemma3:1b`)。同時，大腦會自動套用 `repeat_penalty: 1.2`、自適應 `num_predict` 長度限制，與後置退化重複過濾器，確保本地小模型在降級運作時維持極高穩定性，絕不發生無限重複死循環！這不僅避免了冗長的網路超時，更能確保 100% 的離線高可用性與可靠度！
+
