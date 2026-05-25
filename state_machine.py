@@ -1,6 +1,7 @@
 import enum
 
 class SparkState(enum.Enum):
+    LOADING = "Loading"
     IDLE = "Idle"
     LISTENING = "Listening"
     ATTENTIVE = "Attentive"
@@ -12,7 +13,7 @@ class SparkState(enum.Enum):
 
 class StateMachine:
     def __init__(self):
-        self.current_state = SparkState.IDLE
+        self.current_state = SparkState.LOADING
 
     def transition(self, new_state: SparkState):
         if self.current_state != new_state:

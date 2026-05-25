@@ -492,10 +492,36 @@
             transform: scale(1.05);
             box-shadow: 0 0 40px rgba(255, 126, 187, 0.5);
         }
+
+        @keyframes loading-bar-slide {
+            0% { left: -70px; }
+            100% { left: 250px; }
+        }
     </style>
 </head>
 
 <body>
+
+    <!-- Mimo Loader Overlay -->
+    <div id="mimo-loader" style="position:fixed; top:0; left:0; width:100vw; height:100vh; background:#07050f; display:flex; flex-direction:column; align-items:center; justify-content:center; z-index:9999; transition: opacity 0.5s ease;">
+        <!-- Sleeping/Loading Cat SVG icon -->
+        <svg width="200" height="200" viewBox="0 0 760 400" style="margin-bottom: 20px;">
+            <polygon class="cat-ear" points="180,120 280,110 160,30" />
+            <polygon class="inner-ear" points="200,115 260,110 185,55" />
+            <polygon class="cat-ear" points="480,110 580,120 600,30" />
+            <polygon class="inner-ear" points="500,110 560,115 575,55" />
+            <!-- Sleeping eyes (closed arcs) -->
+            <path d="M 210 190 Q 250 210 290 190" stroke="#ff7ebb" stroke-width="15" stroke-linecap="round" fill="none" />
+            <path d="M 470 190 Q 510 210 550 190" stroke="#ff7ebb" stroke-width="15" stroke-linecap="round" fill="none" />
+            <path class="mouth" d="M 330 330 Q 380 345 430 330" />
+        </svg>
+        <h2 style="font-size:22px; font-weight:700; color:#ff7ebb; margin-bottom:12px; text-shadow:0 0 15px rgba(255,126,187,0.4); letter-spacing:1px;">🐈 MIMO 正在熱身大腦中...</h2>
+        <p style="font-size:14px; color:#888;">請奴才稍候喵，本喵正在載入 Whisper、合成專屬語音快取...</p>
+        <!-- Sleek progress glow bar -->
+        <div style="width:250px; height:4px; background:rgba(255,255,255,0.06); border-radius:2px; margin-top:20px; overflow:hidden; position:relative;">
+            <div style="width:70px; height:100%; background:linear-gradient(90deg, #ff7ebb, #c084fc); position:absolute; left:-70px; animation: loading-bar-slide 1.5s infinite linear; box-shadow:0 0 10px #ff7ebb;"></div>
+        </div>
+    </div>
 
     <!-- Top Bar -->
     <div id="top-bar">
@@ -614,6 +640,16 @@
                     const msg = JSON.parse(event.data);
                     if (msg.type === "state") {
                         const s = msg.value;
+                        if (s === "Loading") {
+                            document.getElementById('mimo-loader').style.display = 'flex';
+                            document.getElementById('mimo-loader').style.opacity = '1';
+                        } else {
+                            const loader = document.getElementById('mimo-loader');
+                            if (loader && loader.style.display !== 'none') {
+                                loader.style.opacity = '0';
+                                setTimeout(() => { loader.style.display = 'none'; }, 500);
+                            }
+                        }
                         faceContainer.className = `state-${s}`;
                         stateLabel.innerText = s;
                         escHint.classList.toggle('active', s === 'Speaking');

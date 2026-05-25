@@ -66,6 +66,19 @@
     *   包含一個「擼貓」按鈕，觸發後發送 WebSocket 訊號。
     *   包含一個體溫模擬滑動條，模擬體溫量測並將數據送給大腦進行分析。
 
+### 3.5 大腦智慧優化與記憶隔離防污染機制 (Brain Intelligence & Memory Isolation)
+*   **優質中文模型鎖定 (Strict Chinese LLM Pinning)**：
+    *   雲端大腦首選鎖定在 OpenRouter 表現最為頂尖且快速的免費繁體中文模型 **`qwen/qwen3-next-80b-a3b-instruct:free`** (Qwen 3 Next 80B)。其具備卓越的繁體中文語境、台灣腔調適配與極高的指令理解能力。
+*   **多級備用大腦重試與本地退路機制 (Multi-Level Brain Retry & Local Fallback)**：
+    *   **雲端備用重試鏈**：系統引進精簡重試機制。首選為 Qwen 3 80B，次選為 Llama 3.3 70B。若首選遭遇 404 等錯誤，系統會自動切換至備用雲端大腦。
+    *   **極速限流跳轉 (Snappy 429 Bypass)**：若偵測到 OpenRouter 免費端點返回 **`429` (Rate Limit 上游限流)**，為了不讓使用者在前端白白等待 10 多秒的重複超時，系統會**立刻中斷雲端重試，在 0.1 秒內直接降級至本地大腦運作**，保障使用者體驗極致流暢！
+    *   **本機終極退路**：當雲端完全失效或被限流時，本地運行的 Ollama (`gemma3:1b` / `llama3.2:3b`) 將無縫接管，在 1 秒內輸出高度合理且具備貓咪人設的繁體中文對話。
+*   **生成穩定度溫度限制 (Temperature Constraint)**：
+    *   在 OpenRouter (`_cloud_chat`) 與本地 Ollama (`_local_generate`) 請求中，強制限制解碼參數 `temperature=0.3`。低溫解碼能迫使 LLM 產生高連貫性、高穩定性的文字流，杜絕大語言模型隨機胡言亂語與出現不符人設的英語混雜。
+*   **記憶資料庫物理隔離 (Memory Database Physical Isolation)**：
+    *   為防止 Spark 舊有的「阿公與小星」對話紀錄被語義檢索提取，進而嚴重污染 Mimo 的貓咪人設大腦，將 SQLite 與向量資料庫重命名為獨立的 **`mimo_memory.db`** 與 **`mimo_chroma_db`**（向量集合名稱更名為 `mimo_conversations`）。
+    *   在角色變更時，自動移除所有舊專案遺留之資料庫暫存，實行乾淨的「記憶物理牆隔離」。
+
 ---
 
 ## 4. 系統狀態機 (State Machine)

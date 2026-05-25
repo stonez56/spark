@@ -3,8 +3,8 @@ import chromadb
 from datetime import datetime
 import uuid
 
-class SparkMemory:
-    def __init__(self, db_path="spark_memory.db", chroma_path="./chroma_db"):
+class MimoMemory:
+    def __init__(self, db_path="mimo_memory.db", chroma_path="./mimo_chroma_db"):
         # SQLite Setup for exact retrieval and structured logging
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
@@ -21,7 +21,7 @@ class SparkMemory:
         # ChromaDB setup for semantic retrieval
         self.chroma_client = chromadb.PersistentClient(path=chroma_path)
         # We use a default embedding model 'all-MiniLM-L6-v2' provided by Chroma automatically
-        self.collection = self.chroma_client.get_or_create_collection(name="spark_conversations")
+        self.collection = self.chroma_client.get_or_create_collection(name="mimo_conversations")
 
     def add_interaction(self, user_input, spark_response):
         # Generate unique ID
@@ -36,7 +36,7 @@ class SparkMemory:
         self.conn.commit()
 
         # Save to ChromaDB (Embed the user input + response for context)
-        document_text = f"User asked: {user_input} | Spark replied: {spark_response}"
+        document_text = f"User asked: {user_input} | Mimo replied: {spark_response}"
         self.collection.add(
             documents=[document_text],
             metadatas=[{"timestamp": timestamp}],

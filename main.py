@@ -15,7 +15,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="onnxruntime")
 
 from state_machine import StateMachine, SparkState
 from ui import run_ui
-from memory import SparkMemory
+from memory import MimoMemory
 from brain import OllamaBrain
 from stt import SparkSTT
 from tts import SparkTTS
@@ -33,7 +33,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
         stt = SparkSTT(model_size="base")
         brain = OllamaBrain()
-        memory = SparkMemory()
+        memory = MimoMemory()
         tts = SparkTTS()
         
         import audio_cache
@@ -45,6 +45,8 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
     # Report initial mode/model to UI
     _report_mode(state_queue, brain)
+    sm.transition(SparkState.IDLE)
+    state_queue.put(SparkState.IDLE)
     print(f"All models loaded. Ready for interaction! [Mode: {brain.mode} | Model: {brain.text_model}]")
 
     stt_buffer = []

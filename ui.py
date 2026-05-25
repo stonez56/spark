@@ -26,7 +26,7 @@ async def get_config():
 connected_clients = set()
 
 # A global reference to the latest state
-current_state = SparkState.IDLE.value
+current_state = SparkState.LOADING.value
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):

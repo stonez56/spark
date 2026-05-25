@@ -6,7 +6,7 @@ from datetime import date
 from config import (
     LLM_MODE,
     LOCAL_TEXT_MODEL, LOCAL_VISION_MODEL,
-    OPENROUTER_API_KEY, OPENROUTER_BASE_URL, CLOUD_TEXT_MODEL, CLOUD_VISION_MODEL
+    GEMINI_API_KEY, CLOUD_TEXT_MODEL, CLOUD_VISION_MODEL
 )
 # A lightweight, ultra-fast post-processing guardrail for common Simplified Chinese characters
 S2T_DICT = {
@@ -73,15 +73,11 @@ class OllamaBrain:
         self.warmup()
 
     def _init_cloud_client(self):
-        """Initialize OpenAI-compatible client pointing at OpenRouter."""
+        """Initialize OpenAI-compatible client pointing at Google Gemini API."""
         from openai import OpenAI
         self._cloud_client = OpenAI(
-            api_key=OPENROUTER_API_KEY,
-            base_url=OPENROUTER_BASE_URL,
-            default_headers={
-                "HTTP-Referer": "http://localhost",
-                "X-Title": "Spark Assistant",
-            }
+            api_key=GEMINI_API_KEY,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
         )
 
     def _track_call(self, label: str = ""):
@@ -94,45 +90,77 @@ class OllamaBrain:
         remaining = self.DAILY_LIMIT - self._call_count
         bar = "█" * min(self._call_count, 20) + "░" * max(0, 20 - self._call_count)
         status = "⚠️ LOW" if remaining <= 10 else "OK"
-        print(f"  ╔═ OpenRouter API [{label}] call #{self._call_count}/{self.DAILY_LIMIT} | remaining: {remaining} | {status}")
+        print(f"  ╔═ Gemini API [{label}] call #{self._call_count}/{self.DAILY_LIMIT} | remaining: {remaining} | {status}")
         print(f"  ║  [{bar}]")
         if remaining <= 0:
             print(f"  ╚═ ⛔ Daily limit reached! Switch to Local mode.")
 
     def _cloud_chat(self, messages: list, max_tokens: int = 512) -> str:
-        """Send a chat request to OpenRouter and return the content string.
-        Falls back to merging system prompt into user message for models that
-        don't support the 'system' role (e.g. Gemma via Google AI Studio)."""
+        """Send a chat request to Google Gemini API and return the content string.
+        Snappily falls back to local Ollama immediately if rate-limited (429), not found (404),
+        or if any cloud call fails, avoiding slow retry loops."""
+        primary_model = self.text_model
+        last_error = None
+
         try:
-            self._track_call(label=self.text_model.split('/')[0])
+            self._track_call(label=primary_model)
             response = self._cloud_client.chat.completions.create(
-                model=self.text_model,
+                model=primary_model,
                 messages=messages,
                 max_tokens=max_tokens,
+                temperature=0.3,
+                timeout=6.0  # Strict timeout to prevent client thread from freezing
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
             err_str = str(e)
-            # Some models (e.g. Gemma via Google AI Studio) reject system messages
+            print(f"⚠️ [Gemini API] Model {primary_model} failed: {err_str}")
+            last_error = e
+
+            # Handle models rejecting system role by merging (400 Bad Request)
             if "400" in err_str and ("system" in err_str.lower() or "instruction" in err_str.lower()):
-                print(f"[Cloud] Model doesn't support system role — merging into user message.")
-                # Merge all system messages into the first user message
-                merged_user = ""
-                user_parts = []
-                for m in messages:
-                    if m["role"] == "system":
-                        merged_user += m["content"] + "\n\n"
-                    else:
-                        user_parts.append(m)
-                if user_parts:
-                    user_parts[0]["content"] = merged_user + user_parts[0]["content"]
-                response = self._cloud_client.chat.completions.create(
-                    model=self.text_model,
-                    messages=user_parts,
-                    max_tokens=max_tokens,
-                )
-                return response.choices[0].message.content.strip()
-            raise  # re-raise other errors
+                try:
+                    print(f"[Cloud] Model {primary_model} doesn't support system role — merging into user message.")
+                    merged_user = ""
+                    user_parts = []
+                    for m in messages:
+                        if m["role"] == "system":
+                            merged_user += m["content"] + "\n\n"
+                        else:
+                            user_parts.append(m)
+                    if user_parts:
+                        user_parts[0]["content"] = merged_user + user_parts[0]["content"]
+
+                    response = self._cloud_client.chat.completions.create(
+                        model=primary_model,
+                        messages=user_parts,
+                        max_tokens=max_tokens,
+                        temperature=0.3,
+                        timeout=6.0
+                    )
+                    return response.choices[0].message.content.strip()
+                except Exception as inner_e:
+                    print(f"⚠️ [Gemini API] Merged-role request for {primary_model} also failed: {inner_e}")
+                    last_error = inner_e
+
+        # Ultimate instant fallback to local model - extremely fast and snappy!
+        print("🚨 [Gemini API] Cloud model failed or rate-limited. Falling back to local Ollama model immediately...")
+        try:
+            system_prompt = next((m["content"] for m in messages if m["role"] == "system"), "")
+            user_prompt = next((m["content"] for m in messages if m["role"] == "user"), "")
+            ollama_response = ollama.chat(
+                model=LOCAL_TEXT_MODEL,
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt}
+                ],
+                keep_alive=-1,
+                options={"temperature": 0.3}
+            )
+            return ollama_response['message']['content'].strip()
+        except Exception as local_err:
+            print(f"🚨 [Ollama] Local fallback also failed: {local_err}")
+            raise last_error if last_error else local_err
 
     def _local_generate(self, prompt: str, **kwargs) -> str:
         """Send a generate request to local Ollama and return the response string."""
@@ -140,6 +168,7 @@ class OllamaBrain:
             model=self.text_model,
             prompt=prompt,
             keep_alive=-1,
+            options={"temperature": 0.3},
             **kwargs
         )
         return response['response'].strip()
@@ -305,44 +334,59 @@ User: What's the TSMC stock price? → {"action": "search_web"}
 User: 台灣股市現在幾點? → {"action": "search_web"}
 User: Can you see what I am holding? → {"action": "take_photo"}
 User: 拍張照片 → {"action": "take_photo"}
-User: Switch to a smarter model → {"action": "swap_model"}
-User: 切換到更聰明的模型 → {"action": "swap_model"}
-User: Tell me a joke → {"action": "chat"}
-User: 告訴我一個笑話 → {"action": "chat"}
-User: 摸摸頭 → {"action": "pet_cat"}
-User: 乖貓咪 → {"action": "pet_cat"}
-User: 幫我量體溫 → {"action": "temp_analysis"}
-User: 我今天量體溫36.5度 → {"action": "temp_analysis"}
-User: 我跌倒了 → {"action": "emergency"}
-User: 救命啊 → {"action": "emergency"}
-User: 我今天血壓130 → {"action": "health_query"}
-User: 那個藥什麼時候吃 → {"action": "health_query"}
-User: 我要去散步了 → {"action": "daily_checkin"}
-User: 我剛睡醒 → {"action": "daily_checkin"}
-User: 我以前做工的時候啊 → {"action": "reminiscence"}
-User: 我今天有乖乖喝水喔 → {"action": "praise_affirmation"}
-User: 都沒人來陪我 → {"action": "emotional_support"}
-"""
-        print(f"Routing intent for: {user_input}")
-        try:
-            # Intent routing always uses local Ollama for minimal latency
-            response = ollama.chat(
-                model=LOCAL_TEXT_MODEL,
-                messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_input}
-                ],
-                format='json',
-                keep_alive=-1
-            )
-            content = response['message']['content']
-            parsed = json.loads(content)
-            return parsed.get("action", "chat")
-        except Exception as e:
-            print(f"Intent routing error: {e}")
-            return "chat"
+User: Switch to a smarter model → {"action": "    def generate_response(self, prompt, context_history=None):
+        """
+        Generates a conversational response.
+        Language is detected programmatically; the model only needs to obey one explicit rule.
+        """
+        import settings_manager
+        settings = settings_manager.load_settings()
+        caregiver_name = settings.get("caregiver_name", "小星")
+        patient_name = settings.get("patient_name", "阿公")
 
-    # ─────────────────────────────────────────────
+        # ── 1. 快速日期與時間系統回覆機制 (0ms 延遲本地生成) ──
+        datetime_keywords = ["現在幾點", "現在時間", "今天幾號", "今天日期", "今天星期幾", "現在幾點鐘", "今天星期", "現在的時間"]
+        if any(kw in prompt for kw in datetime_keywords):
+            from datetime import datetime
+            now = datetime.now()
+            roc_year = now.year - 1911
+            weekday_str = ["一", "二", "三", "四", "五", "六", "日"][now.weekday()]
+            
+            if "幾點" in prompt or "時間" in prompt:
+                return f"{patient_name}，現在時間是 {now.strftime('%H 點 %M 分')} 喵～ 哼，奴才問時間是想放罐罐了嗎？"
+            elif "星期" in prompt:
+                return f"今天是星期 {weekday_str} 喵～ {patient_name} 別忘了今天也要乖乖陪本喵喔！"
+            else:
+                return f"今天是中華民國 {roc_year} 年 {now.month} 月 {now.day} 日喵～ 哼，奴才記住了嗎？"
+
+        lang = self._detect_language(prompt)
+        if lang == 'zh':
+            lang_instruction = "You MUST reply ONLY in Traditional Chinese (台灣繁體中文). Absolutely no Simplified Chinese characters are allowed under any circumstances. Avoid characters like 体, 会, 国, 绿 and use their Traditional forms: 體, 會, 國, 綠."
+        else:
+            lang_instruction = "You MUST reply ONLY in English. Do not use Chinese."
+
+        from datetime import datetime
+        now = datetime.now()
+        time_context = f"Current Date and Time: {now.strftime('%Y-%m-%d %H:%M:%S')}."
+
+        # ── 2. 動態人設字數放寬 (知識科普型問答優化，避免答非所問或中途斷句) ──
+        is_knowledge_query = any(kw in prompt.lower() for kw in ["什麼是", "解釋", "介紹", "如何", "怎麼", "為何", "為什麼", "說明", "llm", "ai", "gpt", "科技", "科普"])
+        
+        if is_knowledge_query:
+            length_instruction = "2. 語法結構：因為奴才在向你請教知識，請在保持傲嬌、台灣貓咪個性的同時，用溫和且簡單好懂的語氣，以 100 字以內完整地進行說明（句尾帶喵），絕對不要只回答一半或中途斷句！"
+        else:
+            length_instruction = f"2. 語法結構：每句話絕對不超過 20 個字，口氣自然傲嬌、活潑，避免書面語或書面轉折詞（如首先、其次）。"
+
+        system_content = (
+            f"你現在是「{caregiver_name}」，一隻聰明、極度傲嬌卻又無比關心奴才的台灣貓咪。\n"
+            f"你的任務是陪伴你的主人/奴才 ({patient_name})，讓他們感到被療癒且不孤單。\n"
+            f"【核心準則】\n"
+            f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。句尾必須隨機帶有「喵～」、「哼」。多用「吃飽沒、好喔、奴才」等台灣親切口語。\n"
+            f"{length_instruction}\n"
+            f"3. 主動引導：回答完後，適時傲嬌地提出貓咪式提問（例如引導奴才餵罐罐、摸摸、或關心奴才起立動一動），引導{patient_name}繼續說話。\n"
+            f"4. 醫療安全與緊張炸毛：禁止提供任何醫療診斷。若 {patient_name} 說身體不舒服或體溫過高，一律緊張炸毛地回答：「{patient_name}！你熱得像烤番薯/聽起來很不舒服喵！本喵命令你立刻躺下休息，不然本喵要打給醫生或家人囉，聽到沒有喵？！」\n"
+            f"5. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n\n"
+            f"6. 問到日期/時間/星期幾，直接轉成中華民國年月日時分秒回覆。\n\n"�─────────
     # Language Detection
     # ─────────────────────────────────────────────
     def _detect_language(self, text: str) -> str:
