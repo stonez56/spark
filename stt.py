@@ -33,6 +33,22 @@ class SparkSTT:
         try:
             from brain import clean_traditional_chinese
             cleaned_text = clean_traditional_chinese(raw_text)
+            
+            # 過濾 Whisper 的 initial_prompt 幻覺
+            hallucinations = [
+                "以下是繁體中文的對話",
+                "使用台灣繁體字形",
+                "避免簡體字形",
+                "避免簡體字",
+                "避免簡體",
+                "繁體中文的對話"
+            ]
+            for h in hallucinations:
+                cleaned_text = cleaned_text.replace(h, "")
+            
+            # 清理因過濾殘留的標點符號與空白
+            cleaned_text = cleaned_text.strip(" ，。,澎、！!？? \t\n")
             return cleaned_text
         except Exception:
             return raw_text
+

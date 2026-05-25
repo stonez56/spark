@@ -367,11 +367,31 @@ class OllamaBrain:
         if any(w in user_input_lower for w in ["摸摸", "乖貓", "可愛", "好乖"]):
             return "pet_cat"
             
-        # --- Phase 2: Local LLM Fallback (Optimized for Pi 5) ---
-        print("Falling back to local LLM for intent routing...")
+        # --- Phase 2: Fallback Intent Routing ---
         system_prompt = """Reply ONLY with JSON {"action":"..."}.
 Actions: chat, take_photo, search_web, swap_model, emergency, health_query, daily_checkin, reminiscence, praise_affirmation, emotional_support, pet_cat, temp_analysis.
 Output no other text."""
+        
+        if self.mode == "cloud":
+            print("Using Cloud LLM for intent routing...")
+            try:
+                messages = [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_input}
+                ]
+                content = self._cloud_chat(messages)
+                import json
+                if "```json" in content:
+                    content = content.split("```json")[1].split("```")[0].strip()
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0].strip()
+                parsed = json.loads(content.strip())
+                return parsed.get("action", "chat")
+            except Exception as e:
+                print(f"Cloud intent routing fallback error: {e}")
+                # 若雲端失敗，繼續嘗試本地模型
+
+        print("Falling back to local LLM for intent routing...")
         try:
             response = ollama.chat(
                 model=LOCAL_TEXT_MODEL,
@@ -390,6 +410,7 @@ Output no other text."""
         except Exception as e:
             print(f"Intent routing fallback error: {e}")
             return "chat"
+
 
     # ─────────────────────────────────────────────
     # Language Detection
