@@ -4,8 +4,8 @@ import os
 SETTINGS_FILE = 'settings.json'
 
 DEFAULT_SETTINGS = {
-    "patient_name": "阿公",
-    "caregiver_name": "小星"
+    "patient_name": "奴才",
+    "caregiver_name": "Mimo"
 }
 
 def load_settings():

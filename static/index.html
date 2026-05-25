@@ -16,7 +16,7 @@
         }
 
         body {
-            background: #0a0a0f;
+            background: #07050f;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -42,8 +42,8 @@
             font-size: 22px;
             font-weight: 700;
             letter-spacing: 2px;
-            color: #00ffff;
-            text-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            color: #ff7ebb;
+            text-shadow: 0 0 20px rgba(255, 126, 187, 0.5);
         }
 
         /* ── Model Badge ── */
@@ -51,8 +51,8 @@
             display: flex;
             align-items: center;
             gap: 8px;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             border-radius: 20px;
             padding: 6px 14px;
             font-size: 13px;
@@ -63,7 +63,7 @@
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #00ffff;
+            background: #ff7ebb;
             animation: pulse-dot 2s infinite;
         }
 
@@ -72,15 +72,8 @@
         }
 
         @keyframes pulse-dot {
-
-            0%,
-            100% {
-                opacity: 1;
-            }
-
-            50% {
-                opacity: 0.4;
-            }
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
         }
 
         /* ── Mode Toggle Buttons ── */
@@ -101,8 +94,8 @@
         }
 
         .btn-config:hover {
-            border-color: #00ffff;
-            color: #00ffff;
+            border-color: #ff7ebb;
+            color: #ff7ebb;
         }
 
         /* ── Face ── */
@@ -136,11 +129,86 @@
             stroke-linecap: round;
             stroke-linejoin: round;
             transition: all 0.3s ease-in-out;
+            filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.5));
         }
 
         .eye-fill {
             fill: #00ffff;
             transition: all 0.3s ease-in-out;
+            filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.5));
+        }
+
+        /* ── Cat Ears & Whiskers ── */
+        .cat-ear {
+            fill: none;
+            stroke: #ff7ebb;
+            stroke-width: 12;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            transition: all 0.3s ease-in-out;
+            filter: drop-shadow(0 0 12px rgba(255, 126, 187, 0.4));
+        }
+
+        .inner-ear {
+            fill: #ff7ebb;
+            opacity: 0.25;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .cat-whisker {
+            fill: none;
+            stroke: #ff7ebb;
+            stroke-width: 6;
+            stroke-linecap: round;
+            opacity: 0.6;
+            transition: all 0.3s ease-in-out;
+            filter: drop-shadow(0 0 5px rgba(255, 126, 187, 0.3));
+        }
+
+        /* ── SVG Ear twitching & thinking (fly ears) Animations ── */
+        .state-Listening .left-ear, .state-Attentive .left-ear {
+            animation: twitch-left 0.4s infinite alternate ease-in-out;
+        }
+        .state-Listening .right-ear, .state-Attentive .right-ear {
+            animation: twitch-right 0.4s infinite alternate ease-in-out;
+        }
+
+        @keyframes twitch-left {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(-4deg); transform-origin: 230px 110px; }
+        }
+
+        @keyframes twitch-right {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(4deg); transform-origin: 530px 110px; }
+        }
+
+        .state-Thinking .left-ear {
+            transform: rotate(-16deg) translate(-15px, 8px);
+            transform-origin: 230px 110px;
+        }
+
+        .state-Thinking .right-ear {
+            transform: rotate(16deg) translate(15px, 8px);
+            transform-origin: 530px 110px;
+        }
+
+        .state-Speaking .left-ear, .state-Speaking .right-ear {
+            animation: speak-ear 0.2s infinite alternate ease-in-out;
+        }
+
+        @keyframes speak-ear {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-4px); }
+        }
+
+        .state-Speaking .cat-whisker {
+            animation: wiggle-whiskers 0.1s infinite alternate ease-in-out;
+        }
+
+        @keyframes wiggle-whiskers {
+            0% { transform: translateY(0); }
+            100% { transform: translateY(-2px); }
         }
 
         /* States */
@@ -168,16 +236,8 @@
         }
 
         @keyframes blink {
-
-            0%,
-            95%,
-            100% {
-                ry: 30;
-            }
-
-            97% {
-                ry: 2;
-            }
+            0%, 95%, 100% { ry: 30; }
+            97% { ry: 2; }
         }
 
         .state-Listening .left-eye,
@@ -225,15 +285,11 @@
         }
 
         @keyframes spin-left {
-            100% {
-                transform: rotate(360deg);
-            }
+            100% { transform: rotate(360deg); }
         }
 
         @keyframes spin-right {
-            100% {
-                transform: rotate(-360deg);
-            }
+            100% { transform: rotate(-360deg); }
         }
 
         .state-Speaking .left-eye {
@@ -257,20 +313,15 @@
         }
 
         @keyframes talk {
-            0% {
-                d: path("M 300 330 Q 380 330 460 330 Q 380 345 300 330");
-            }
-
-            100% {
-                d: path("M 300 330 Q 380 330 460 330 Q 380 400 300 330");
-            }
+            0% { d: path("M 300 330 Q 380 330 460 330 Q 380 345 300 330"); }
+            100% { d: path("M 300 330 Q 380 330 460 330 Q 380 400 300 330"); }
         }
 
         /* ── State Label ── */
         #state-label {
             font-size: 15px;
             font-weight: 600;
-            color: rgba(0, 255, 255, 0.5);
+            color: rgba(255, 126, 187, 0.6);
             letter-spacing: 3px;
             text-transform: uppercase;
             margin-top: -8px;
@@ -293,15 +344,15 @@
         #transcript-panel {
             width: 90%;
             max-width: 760px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 16px;
             padding: 16px 20px;
             min-height: 90px;
-            max-height: 30%;
+            max-height: 25%;
             overflow-y: auto;
             transition: all 0.4s ease;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
         .transcript-row {
@@ -327,16 +378,106 @@
         }
 
         .transcript-spark span {
-            color: #a78bfa;
+            color: #ff7ebb;
             font-weight: 600;
+        }
+
+        /* ── Dashboard Glassmorphism Panel ── */
+        #mimo-dashboard {
+            width: 90%;
+            max-width: 760px;
+            background: rgba(255, 255, 255, 0.02);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 20px;
+            padding: 14px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .dash-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .dash-btn {
+            padding: 10px 22px;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            background: linear-gradient(135deg, #ff7ebb, #c084fc);
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 0 15px rgba(255, 126, 187, 0.3);
+            font-family: inherit;
+        }
+
+        .dash-btn:hover {
+            transform: scale(1.04);
+            box-shadow: 0 0 25px rgba(255, 126, 187, 0.5);
+        }
+
+        .dash-btn.cyan {
+            background: linear-gradient(135deg, #00ffff, #0099cc);
+            color: #07050f;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+        }
+
+        .dash-btn.cyan:hover {
+            box-shadow: 0 0 25px rgba(0, 255, 255, 0.5);
+        }
+
+        .temp-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #aaa;
+            font-size: 14px;
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 140px;
+            height: 6px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 3px;
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #00ffff;
+            cursor: pointer;
+            box-shadow: 0 0 10px #00ffff;
+            transition: .1s;
+        }
+
+        #temp-display {
+            font-weight: 700;
+            color: #00ffff;
+            min-width: 60px;
+            text-align: right;
         }
 
         /* ── Start Button ── */
         #start-btn {
             padding: 14px 36px;
             font-size: 17px;
-            background: linear-gradient(135deg, #00ffff, #0099cc);
-            color: #0a0a0f;
+            background: linear-gradient(135deg, #ff7ebb, #c084fc);
+            color: #fff;
             border: none;
             border-radius: 30px;
             cursor: pointer;
@@ -344,12 +485,12 @@
             margin: 20px 0;
             transition: all 0.2s;
             font-family: inherit;
-            box-shadow: 0 0 30px rgba(0, 255, 255, 0.3);
+            box-shadow: 0 0 30px rgba(255, 126, 187, 0.3);
         }
 
         #start-btn:hover {
             transform: scale(1.05);
-            box-shadow: 0 0 40px rgba(0, 255, 255, 0.5);
+            box-shadow: 0 0 40px rgba(255, 126, 187, 0.5);
         }
     </style>
 </head>
@@ -358,7 +499,7 @@
 
     <!-- Top Bar -->
     <div id="top-bar">
-        <div id="spark-title">✦ SPARK</div>
+        <div id="spark-title">🐈 MIMO</div>
 
         <div id="model-badge">
             <div id="mode-dot"></div>
@@ -369,12 +510,31 @@
     </div>
 
     <!-- Start Button — shown only if mic permission not yet granted -->
-    <button id="start-btn" onclick="startSpark()" style="display:none;">Enable Microphone &amp; Start Spark</button>
+    <button id="start-btn" onclick="startSpark()" style="display:none;">Enable Microphone &amp; Start Mimo</button>
 
     <!-- Face -->
     <div id="face-wrapper" style="display:none;">
         <div id="face-container" class="state-Idle">
             <svg width="760" height="400" viewBox="0 0 760 400">
+                <!-- Left Cat Ear -->
+                <polygon class="cat-ear" points="180,120 280,110 160,30" />
+                <polygon class="inner-ear" points="200,115 260,110 185,55" />
+                
+                <!-- Right Cat Ear -->
+                <polygon class="cat-ear" points="480,110 580,120 600,30" />
+                <polygon class="inner-ear" points="500,110 560,115 575,55" />
+
+                <!-- Left Whiskers -->
+                <line class="cat-whisker left-whisker" x1="220" y1="280" x2="100" y2="265" />
+                <line class="cat-whisker left-whisker" x1="210" y1="300" x2="80" y2="300" />
+                <line class="cat-whisker left-whisker" x1="220" y1="320" x2="100" y2="335" />
+
+                <!-- Right Whiskers -->
+                <line class="cat-whisker right-whisker" x1="540" y1="280" x2="660" y2="265" />
+                <line class="cat-whisker right-whisker" x1="550" y1="300" x2="680" y2="300" />
+                <line class="cat-whisker right-whisker" x1="540" y1="320" x2="660" y2="335" />
+
+                <!-- Eyes and Mouth -->
                 <ellipse class="eye-fill left-eye" cx="250" cy="190" rx="40" ry="30" />
                 <ellipse class="eye-fill right-eye" cx="510" cy="190" rx="40" ry="30" />
                 <path class="mouth" d="M 330 330 Q 380 345 430 330" />
@@ -388,7 +548,23 @@
         <div id="transcript-panel">
             <div class="transcript-row" id="transcript-row">
                 <div class="transcript-user"><span>You:</span> —</div>
-                <div class="transcript-spark"><span>Spark:</span> —</div>
+                <div class="transcript-spark"><span>Mimo:</span> —</div>
+            </div>
+        </div>
+
+        <!-- Glassmorphism Interactive Dashboard -->
+        <div id="mimo-dashboard">
+            <!-- Left: Pet the Cat -->
+            <div class="dash-section">
+                <button id="btn-pet" onclick="petMimo()" class="dash-btn">🐾 擼貓摸摸</button>
+            </div>
+
+            <!-- Right: Temperature Simulation -->
+            <div class="dash-section temp-control">
+                <span>🌡️ 體溫模擬:</span>
+                <input type="range" id="temp-slider" min="35.0" max="42.0" step="0.1" value="36.5" oninput="updateTempDisplay(this.value)">
+                <span id="temp-display">36.5 °C</span>
+                <button id="btn-measure" onclick="measureTemp()" class="dash-btn cyan">測量</button>
             </div>
         </div>
     </div>
@@ -409,6 +585,24 @@
         // Current playback source so we can stop it
         let currentSource = null;
         let playbackContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
+
+        // ── Interactive Dashboard Functions ──
+        function petMimo() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'pet_cat' }));
+            }
+        }
+
+        function updateTempDisplay(val) {
+            document.getElementById('temp-display').innerText = `${parseFloat(val).toFixed(1)} °C`;
+        }
+
+        function measureTemp() {
+            const val = parseFloat(document.getElementById('temp-slider').value);
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'temp_measure', value: val }));
+            }
+        }
 
         // ── WebSocket ──────────────────────────────
         function connectWebSocket() {
@@ -470,15 +664,13 @@
             const shortModel = model.split('/').pop().split(':')[0];
             modelLabel.innerText = `${mode} · ${shortModel}`;
             modeDot.className = mode === 'cloud' ? 'cloud' : '';
-            document.getElementById('btn-local').className = 'mode-btn' + (mode === 'local' ? ' active-local' : '');
-            document.getElementById('btn-cloud').className = 'mode-btn' + (mode === 'cloud' ? ' active-cloud' : '');
         }
 
         // ── Transcript Update ─────────────────────
         function updateTranscript(userText, sparkText) {
             transcriptRow.innerHTML = `
                 <div class="transcript-user"><span>You:</span> ${escapeHtml(userText)}</div>
-                <div class="transcript-spark"><span>Spark:</span> ${escapeHtml(sparkText)}</div>
+                <div class="transcript-spark"><span>Mimo:</span> ${escapeHtml(sparkText)}</div>
             `;
         }
 

@@ -195,12 +195,12 @@
     <div class="panel">
         <h2>👤 稱呼設定 (Personalization)</h2>
         <div class="form-group">
-            <label>被照護者稱呼</label>
-            <input type="text" id="patient-name" placeholder="例如: 阿公, 阿媽, 王伯伯">
+            <label>主人/奴才稱呼 (預設: 奴才)</label>
+            <input type="text" id="patient-name" placeholder="例如: 奴才, 主人, 帥哥">
         </div>
         <div class="form-group">
-            <label>機器人/家屬稱呼</label>
-            <input type="text" id="caregiver-name" placeholder="例如: 小星, 阿忠, 小麗">
+            <label>貓咪助理稱呼 (預設: Mimo)</label>
+            <input type="text" id="caregiver-name" placeholder="例如: Mimo, 咪咪, 橘子">
         </div>
         <div style="display:flex; align-items:center; gap:10px; margin-top: 10px;">
             <button class="btn-primary" id="save-settings-btn" onclick="saveSettings()">儲存設定</button>
@@ -211,15 +211,15 @@
 
     <!-- Reminders Panel -->
     <div class="panel">
-        <h2>⏰ 醫療級排程提醒 (Advanced Reminders)</h2>
+        <h2>⏰ 貓咪生活叮嚀排程 (Mimo Life Reminders)</h2>
         <div id="reminders-list" style="margin-bottom: 20px;"></div>
         
         <div style="background: rgba(0,0,0,0.5); padding: 16px; border-radius: 8px;">
             <h3 style="font-size: 15px; color:#ddd; margin-bottom: 12px;">➕ 新增提醒</h3>
             
             <div class="form-group">
-                <label>提醒內容 (Message)</label>
-                <input type="text" id="new-rem-msg" placeholder="例如: 阿公吃高血壓藥囉">
+                <label>叮嚀內容 (Message)</label>
+                <input type="text" id="new-rem-msg" placeholder="例如: 奴才該起來喝杯水魔法囉">
             </div>
             
             <div class="form-group">
@@ -303,7 +303,7 @@
         spinner.style.display = 'block';
         msg.style.display = 'inline';
         msg.style.color = '#ffcc00';
-        msg.innerText = '正在為長輩重新合成專屬語音，請稍候...';
+        msg.innerText = '本喵正在為奴才重新合成專屬傲嬌語音，請稍候喵...';
         
         try {
             await fetch('/api/settings', {

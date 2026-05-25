@@ -100,6 +100,77 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 listening_start = time.time()
                 oww_model.reset()
                 continue # Skip audio queue processing this tick
+            elif cmd['type'] == 'pet_cat':
+                print("\n[System] User petted Mimo!")
+                sm.transition(SparkState.ATTENTIVE)
+                state_queue.put(SparkState.ATTENTIVE)
+                
+                import audio_cache
+                filler_bytes = audio_cache.get_random_filler("pet_cat")
+                if filler_bytes:
+                    tts_queue.put(filler_bytes)
+                
+                prompt = "(系統提示：奴才剛剛摸了你的頭，你感到非常舒服，請以傲嬌、被治癒的貓咪口吻對奴才說幾句話，句尾加上喵～，長度在20字以內。)"
+                response = brain.generate_response(prompt, "奴才摸摸你的頭")
+                transcript_queue.put(("[擼貓摸摸]", response))
+                
+                time.sleep(1.5)
+                
+                sm.transition(SparkState.SPEAKING)
+                state_queue.put(SparkState.SPEAKING)
+                stop_audio_flag.clear()
+                
+                audio_output = tts.synthesize(response)
+                tts_queue.put(audio_output)
+                
+                audio_duration = len(audio_output) / (22050 * 2)
+                elapsed = 0
+                step = 0.05
+                while elapsed < audio_duration:
+                    if stop_audio_flag.is_set():
+                        break
+                    time.sleep(step)
+                    elapsed += step
+                
+                sm.transition(SparkState.IDLE)
+                state_queue.put(SparkState.IDLE)
+                continue
+            elif cmd['type'] == 'temp_measure':
+                temp_val = cmd['value']
+                print(f"\n[System] Measuring temperature: {temp_val}°C")
+                sm.transition(SparkState.THINKING)
+                state_queue.put(SparkState.THINKING)
+                
+                import audio_cache
+                filler_bytes = audio_cache.get_random_filler("temp_analysis")
+                if filler_bytes:
+                    tts_queue.put(filler_bytes)
+                
+                prompt = f"我剛量完體溫，溫度是 {temp_val} 度。(系統提示：請根據這個溫度給予傲嬌、碎碎念但關心奴才的評價。36.0-37.2度是正常，低於36度是冷冰冰，高於37.5度是熱得像烤番薯。字數嚴格限制在20字以內。)"
+                response = brain.generate_response(prompt, f"測量體溫 {temp_val}°C")
+                transcript_queue.put((f"[測量體溫: {temp_val}°C]", response))
+                
+                time.sleep(2.0)
+                
+                sm.transition(SparkState.SPEAKING)
+                state_queue.put(SparkState.SPEAKING)
+                stop_audio_flag.clear()
+                
+                audio_output = tts.synthesize(response)
+                tts_queue.put(audio_output)
+                
+                audio_duration = len(audio_output) / (22050 * 2)
+                elapsed = 0
+                step = 0.05
+                while elapsed < audio_duration:
+                    if stop_audio_flag.is_set():
+                        break
+                    time.sleep(step)
+                    elapsed += step
+                
+                sm.transition(SparkState.IDLE)
+                state_queue.put(SparkState.IDLE)
+                continue
             elif cmd['type'] == 'regenerate_cache':
                 import audio_cache
                 audio_cache.regenerate(tts)

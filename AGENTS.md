@@ -34,6 +34,9 @@ main.py              # Entry point, audio orchestrator, reminder scheduler
 ├── state_machine.py # IDLE/LISTENING/THINKING/SPEAKING
 └── ui.py           # FastAPI + WebSocket on port 8000
 ```
+## Language
+- Default language is T-Chinese
+- Always reply and provide text in T-Chinese
 
 ## Intent Routing
 

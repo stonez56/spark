@@ -45,12 +45,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Handle text commands from client (e.g. "stop_audio")
                 try:
                     msg = json.loads(data["text"])
-                    if msg.get("type") == "stop_audio":
+                    msg_type = msg.get("type")
+                    if msg_type == "stop_audio":
                         # Signal the audio orchestrator to stop playback
                         if hasattr(app.state, 'stop_audio_flag'):
                             app.state.stop_audio_flag.set()
-                except Exception:
-                    pass
+                    elif msg_type == "pet_cat":
+                        if hasattr(app.state, 'command_queue') and app.state.command_queue:
+                            app.state.command_queue.put({'type': 'pet_cat'})
+                    elif msg_type == "temp_measure":
+                        if hasattr(app.state, 'command_queue') and app.state.command_queue:
+                            app.state.command_queue.put({'type': 'temp_measure', 'value': msg.get('value', 36.5)})
+                except Exception as e:
+                    print(f"Error handling text websocket message: {e}")
             elif "bytes" in data:
                 if not audio_active_printed:
                     print("🎙️ [WebSocket] Audio stream active (receiving microphone data)...")
