@@ -75,9 +75,9 @@ def get_fillers(patient_name: str) -> dict[str, list[str]]:
             "喵～本喵收到啦！",
         ],
         "praise_affirmation": [
-            "哇塞！不愧是本喵的奴才！",
+            f"哇塞！不愧是本喵的{patient_name}！",
             "太棒了吧喵！",
-            "厲害厲害，給奴才拍拍貓爪！",
+            f"厲害厲害，給{patient_name}拍拍貓爪！",
             "哎喲，不愧是本喵看上的人類！",
             "做得太棒了喵！",
         ],
@@ -90,7 +90,7 @@ def get_fillers(patient_name: str) -> dict[str, list[str]]:
         ],
         "pet_cat": [
             "呼嚕呼嚕...好舒服喵...",
-            "喵嗚...奴才摸得真舒服...",
+            f"喵嗚...{patient_name}摸得真舒服...",
             "哼，特准你繼續摸本喵喵...",
             "再摸一下下，就一下下喔喵...",
             "呼嚕...本喵很滿意喵！",

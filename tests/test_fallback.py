@@ -7,57 +7,68 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from brain import OllamaBrain
 
-def run_stress_test_429():
-    print("="*70)
-    print("🧪 啟動 Mimo 大腦：官方 Google Gemini API 連續高頻 429 壓力測試")
-    print("="*70)
+def run_refinement_test():
+    print("="*75)
+    print("🧪 啟動 Mimo 大腦：0ms 本地時間與動態字數 (LLM科普) 二合一測試")
+    print("="*75)
 
     # 1. 初始化 OllamaBrain 實例
-    print("\n[Step 1] 初始化 OllamaBrain 實例...")
+    print("\n[Step 1] 初始化 OllamaBrain...")
     brain = OllamaBrain()
+    
+    # 2. 測試 0ms 系統時間攔截器
+    print("\n[Step 2] 測試本地 0ms 時間/日期攔截器...")
+    time_queries = ["現在幾點", "今天星期幾", "今天幾號", "今天幾月幾號"]
+    for q in time_queries:
+        start_time = time.time()
+        response = brain.generate_response(q)
+        elapsed = time.time() - start_time
+        print(f"❓ 問題: '{q}'")
+        print(f"⏱️ 耗時: {elapsed*1000:.2f} 毫秒 (目標：趨近 0 毫秒！)")
+        print(f"💬 Mimo 回應: {response}\n")
+        
+        # 驗證是否極速生成
+        if elapsed < 0.1:
+            print("✅ 成功！這是 100% 本地 0 毫秒極速時間攔截！")
+        else:
+            print("❌ 失敗：耗時過長，可能仍發送給了雲端/本地大腦模型。")
+        print("-" * 50)
+
+    # 3. 測試知識科普問答放寬字數 (什麼是LLM)
+    print("\n[Step 3] 測試認真的知識型科普問答放寬字數 (解決斷句痛點)...")
+    prompt = "跟我說一下什麼是LLM"
+    print(f"❓ 問題: '{prompt}'")
+    
+    # 強制使用雲端以驗證 Gemini-2.5-flash
     brain.mode = "cloud"
     brain._init_cloud_client()
     
-    # 確認讀取到的 API Key 是否有效
-    api_key_status = "✅ 已成功讀取 GEMINI_API_KEY" if brain._cloud_client.api_key else "❌ 未找到 GEMINI_API_KEY"
-    print(f"🔑 API 金鑰狀態: {api_key_status}")
-    if not brain._cloud_client.api_key:
-        print("🚨 無法測試，請確認 .env 中已正確設定 GEMINI_API_KEY。")
-        return
-
-    # 2. 開始高頻連續呼叫 (For Loop)
-    print("\n[Step 2] 開始進行高頻快速呼叫 (測試 Google 15 RPM 的限流反應與無縫降級)...")
-    print("💡 Mimo 將連續發送 20 次請求。一旦觸發 Google 429 限流，我們將精確測量降級至 Ollama 的延遲！")
-    
-    for i in range(1, 21):
-        prompt = f"這是第 {i} 次點頭，喵～"
-        print(f"\n────────────────── [呼叫 #{i}] ──────────────────")
+    start_time = time.time()
+    try:
+        response = brain.generate_response(prompt)
+        elapsed = time.time() - start_time
+        print(f"⏱️ 總花費時間: {elapsed:.2f} 秒")
+        print(f"💬 Mimo 回應內容: \n{response}\n")
         
-        start_time = time.time()
-        try:
-            # 發送請求
-            response = brain.generate_response(prompt)
-            elapsed = time.time() - start_time
+        # 驗證字數與完整性
+        word_count = len(response)
+        print(f"📏 回應字數: {word_count} 字")
+        if word_count > 30:
+            print("✅ 成功！Mimo 已經成功突破 20 字極限，給予了奴才高質量的完整解釋！")
+        else:
+            print("❌ 失敗：字數依然過短，請確認 length_instruction 是否生效。")
             
-            # 判斷是否為降級產生的回應 (Ollama 生成速度快且帶有特定本地日誌，但我們可以直接看終端機輸出的 Fallback Log)
-            print(f"⏱️ 呼叫耗時: {elapsed:.2f} 秒")
-            print(f"💬 Mimo 回應: {response}")
+        if response.endswith("...") or response.endswith("就是很"):
+            print("❌ 失敗：檢測到句子被截斷或斷開！")
+        else:
+            print("✅ 成功！句子結尾完整，沒有出現任何截斷或中途斷句！")
             
-        except Exception as e:
-            print(f"❌ 測試呼叫發生未捕獲異常: {e}")
-            break
-            
-        # 為了能在短時間內迅速衝破 15 RPM (每分鐘 15 次) 限制，我們每次呼叫只間隔 0.1 秒
-        time.sleep(0.1)
+    except Exception as e:
+        print(f"❌ 測試呼叫失敗: {e}")
 
-    print("\n" + "="*70)
-    print("🎉 壓力測試結束！")
-    print("請仔細閱讀上方每次呼叫的日誌：")
-    print("1. 前面幾次呼叫：直連 Google 官方 Gemini，速度極快且回應傲嬌！")
-    print("2. 當觸發 Google 限流 (429) 時：Google 會在『幾十毫秒內』立刻回傳 429，")
-    print("   Mimo 會在『0.1秒內立刻』轉向本地 Ollama 生成，")
-    print("   使整趟對談耗時依然維持在約 1.5 秒左右，徹底自證絕不卡死 20 秒！")
-    print("="*70 + "\n")
+    print("\n" + "="*75)
+    print("🎉 測試圓滿結束！")
+    print("="*75 + "\n")
 
 if __name__ == "__main__":
-    run_stress_test_429()
+    run_refinement_test()

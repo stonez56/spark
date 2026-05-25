@@ -107,13 +107,16 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 sm.transition(SparkState.ATTENTIVE)
                 state_queue.put(SparkState.ATTENTIVE)
                 
+                import settings_manager
+                patient_name = settings_manager.load_settings().get("patient_name", "奴才")
+                
                 import audio_cache
                 filler_bytes = audio_cache.get_random_filler("pet_cat")
                 if filler_bytes:
                     tts_queue.put(filler_bytes)
                 
-                prompt = "(系統提示：奴才剛剛摸了你的頭，你感到非常舒服，請以傲嬌、被治癒的貓咪口吻對奴才說幾句話，句尾加上喵～，長度在20字以內。)"
-                response = brain.generate_response(prompt, "奴才摸摸你的頭")
+                prompt = f"(系統提示：{patient_name}剛剛摸了你的頭，你感到非常舒服，請以傲嬌、被治癒的貓咪口吻對{patient_name}說幾句話，句尾加上喵～，長度在20字以內。)"
+                response = brain.generate_response(prompt, f"{patient_name}摸摸你的頭")
                 transcript_queue.put(("[擼貓摸摸]", response))
                 
                 time.sleep(1.5)
@@ -143,12 +146,15 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 sm.transition(SparkState.THINKING)
                 state_queue.put(SparkState.THINKING)
                 
+                import settings_manager
+                patient_name = settings_manager.load_settings().get("patient_name", "奴才")
+                
                 import audio_cache
                 filler_bytes = audio_cache.get_random_filler("temp_analysis")
                 if filler_bytes:
                     tts_queue.put(filler_bytes)
                 
-                prompt = f"我剛量完體溫，溫度是 {temp_val} 度。(系統提示：請根據這個溫度給予傲嬌、碎碎念但關心奴才的評價。36.0-37.2度是正常，低於36度是冷冰冰，高於37.5度是熱得像烤番薯。字數嚴格限制在20字以內。)"
+                prompt = f"我剛量完體溫，溫度是 {temp_val} 度。(系統提示：請根據這個溫度給予傲嬌、碎碎念但關心{patient_name}的評價。36.0-37.2度是正常，低於36度是冷冰冰，高於37.5度是熱得像烤番薯。字數嚴格限制在20字以內。)"
                 response = brain.generate_response(prompt, f"測量體溫 {temp_val}°C")
                 transcript_queue.put((f"[測量體溫: {temp_val}°C]", response))
                 

@@ -195,8 +195,8 @@
     <div class="panel">
         <h2>👤 稱呼設定 (Personalization)</h2>
         <div class="form-group">
-            <label>主人/奴才稱呼 (預設: 奴才)</label>
-            <input type="text" id="patient-name" placeholder="例如: 奴才, 主人, 帥哥">
+            <label>您的稱呼 (預設: 奴才)</label>
+            <input type="text" id="patient-name" placeholder="例如: 恩霖, 阿公, 主人">
         </div>
         <div class="form-group">
             <label>貓咪助理稱呼 (預設: Mimo)</label>
@@ -219,7 +219,7 @@
             
             <div class="form-group">
                 <label>叮嚀內容 (Message)</label>
-                <input type="text" id="new-rem-msg" placeholder="例如: 奴才該起來喝杯水魔法囉">
+                <input type="text" id="new-rem-msg" placeholder="例如: 該起來喝杯水囉">
             </div>
             
             <div class="form-group">
@@ -303,7 +303,7 @@
         spinner.style.display = 'block';
         msg.style.display = 'inline';
         msg.style.color = '#ffcc00';
-        msg.innerText = '本喵正在為奴才重新合成專屬傲嬌語音，請稍候喵...';
+        msg.innerText = `本喵正在為${patient || '您'}重新合成專屬傲嬌語音，請稍候喵...`;
         
         try {
             await fetch('/api/settings', {
