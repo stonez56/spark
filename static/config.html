@@ -202,7 +202,15 @@
             <label>貓咪助理稱呼 (預設: Mimo)</label>
             <input type="text" id="caregiver-name" placeholder="例如: Mimo, 咪咪, 橘子">
         </div>
-        <div style="display:flex; align-items:center; gap:10px; margin-top: 10px;">
+        <div class="form-group">
+            <label>🗣️ 語速斷句自適應設定 (Speech Speed VAD)</label>
+            <select id="speaking-speed" style="width:100%; padding:10px; background:#1c1c24; border:1px solid rgba(255,255,255,0.15); color:#fff; border-radius:6px; font-size:14px; font-family:'Inter'; outline:none; transition: border-color 0.2s;">
+                <option value="fast">⚡ 快速語者 (1.2 秒靜音自動斷句)</option>
+                <option value="normal" selected>😊 一般語者 (1.8 秒靜音自動斷句)</option>
+                <option value="slow">🐢 慢速語者 (2.5 秒靜音自動斷句)</option>
+            </select>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top: 15px;">
             <button class="btn-primary" id="save-settings-btn" onclick="saveSettings()">儲存設定</button>
             <div id="settings-spinner" class="spinner"></div>
             <span id="settings-msg" style="font-size:13px; display:none;"></span>
@@ -288,11 +296,13 @@
             const data = await res.json();
             document.getElementById('patient-name').value = data.patient_name || '';
             document.getElementById('caregiver-name').value = data.caregiver_name || '';
+            document.getElementById('speaking-speed').value = data.speaking_speed || 'normal';
         } catch(e) { console.error(e); }
     }
     async function saveSettings() {
         const patient = document.getElementById('patient-name').value;
         const caregiver = document.getElementById('caregiver-name').value;
+        const speed = document.getElementById('speaking-speed').value;
         
         const btn = document.getElementById('save-settings-btn');
         const spinner = document.getElementById('settings-spinner');
@@ -309,7 +319,7 @@
             await fetch('/api/settings', {
                 method: 'POST',
                 headers:{'Content-Type': 'application/json'},
-                body: JSON.stringify({patient_name: patient, caregiver_name: caregiver})
+                body: JSON.stringify({patient_name: patient, caregiver_name: caregiver, speaking_speed: speed})
             });
             await new Promise(r => setTimeout(r, 5000));
             msg.style.color = '#00ffff';

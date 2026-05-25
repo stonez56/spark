@@ -9,6 +9,7 @@ import threading
 import warnings
 import numpy as np
 from multiprocessing import Process, Queue, Event
+from datetime import datetime
 
 # Suppress onnxruntime CUDAExecutionProvider warnings for Raspberry Pi
 warnings.filterwarnings("ignore", category=UserWarning, module="onnxruntime")
@@ -20,6 +21,9 @@ from brain import OllamaBrain
 from stt import SparkSTT
 from tts import SparkTTS
 from config import LLM_MODE, LOCAL_TEXT_MODEL, CLOUD_TEXT_MODEL
+
+def get_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue):
     print("Loading AI Models...")
@@ -45,6 +49,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
     # Report initial mode/model to UI
     _report_mode(state_queue, brain)
+    active_silence_timeout = 1.8  # 預設自適應靜音斷句超時時間
     sm.transition(SparkState.IDLE)
     state_queue.put(SparkState.IDLE)
     print(f"All models loaded. Ready for interaction! [Mode: {brain.mode} | Model: {brain.text_model}]")
@@ -100,6 +105,19 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 state_queue.put(SparkState.LISTENING)
                 stt_buffer = []
                 listening_start = time.time()
+                last_active_time = time.time()
+                has_spoken = False
+                
+                # 讀取並計算自適應靜音斷句超時時間
+                import settings_manager
+                speed_mode = settings_manager.load_settings().get("speaking_speed", "normal")
+                if speed_mode == "fast":
+                    active_silence_timeout = 1.2
+                elif speed_mode == "slow":
+                    active_silence_timeout = 2.5
+                else:
+                    active_silence_timeout = 1.8
+                
                 oww_model.reset()
                 continue # Skip audio queue processing this tick
             elif cmd['type'] == 'pet_cat':
@@ -210,23 +228,59 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         state_queue.put(SparkState.LISTENING)
                         stt_buffer = []
                         listening_start = time.time()
+                        last_active_time = time.time()
+                        has_spoken = False
+                        
+                        # 讀取並計算自適應靜音斷句超時時間
+                        import settings_manager
+                        speed_mode = settings_manager.load_settings().get("speaking_speed", "normal")
+                        if speed_mode == "fast":
+                            active_silence_timeout = 1.2
+                        elif speed_mode == "slow":
+                            active_silence_timeout = 2.5
+                        else:
+                            active_silence_timeout = 1.8
 
             elif state == SparkState.LISTENING or state == SparkState.ATTENTIVE:
                 stt_buffer.append(audio_data)
 
-                if time.time() - listening_start > 4.0:
-                    print("Finished listening. Processing...")
+                # ── Voice Activity Detection (VAD) 簡易且健全的能量檢測 ──
+                block_volume = np.abs(audio_data).mean() if len(audio_data) > 0 else 0
+                SILENCE_THRESHOLD = 250
+                SILENCE_TIMEOUT = active_silence_timeout
+                MAX_RECORDING_TIME = 15.0
+                
+                now_time = time.time()
+                if block_volume > SILENCE_THRESHOLD:
+                    last_active_time = now_time
+                    has_spoken = True
+                
+                elapsed_since_start = now_time - listening_start
+                silence_duration = now_time - last_active_time
+                
+                should_stop = False
+                if elapsed_since_start > MAX_RECORDING_TIME:
+                    should_stop = True
+                    print(f"[{get_timestamp()}] Reached max recording limit ({MAX_RECORDING_TIME}s). Processing...")
+                elif has_spoken and silence_duration > SILENCE_TIMEOUT:
+                    should_stop = True
+                    print(f"[{get_timestamp()}] Speech stopped detected (silence for {silence_duration:.2f}s). Processing...")
+                elif not has_spoken and elapsed_since_start > 3.5:
+                    should_stop = True
+                    print(f"[{get_timestamp()}] No speech detected for 3.5s. Processing...")
+
+                if should_stop:
                     sm.transition(SparkState.THINKING)
                     state_queue.put(SparkState.THINKING)
 
                     full_audio = np.concatenate(stt_buffer)
                     transcription = stt.transcribe(full_audio)
-                    print(f"User: {transcription}")
+                    print(f"[{get_timestamp()}] User: {transcription}")
 
                     response = "..."
                     if transcription:
                         action = brain.route_intent(transcription)
-                        print(f"Decided action: {action}")
+                        print(f"[{get_timestamp()}] Decided action: {action}")
                         
                         import audio_cache
                         filler_bytes = audio_cache.get_random_filler(action)
@@ -237,9 +291,22 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         if action in ["chat", "health_query", "daily_checkin", "reminiscence", "praise_affirmation", "emotional_support"]:
                             context = memory.retrieve_context(transcription)
                             intent_hint = ""
+                            
+                            # 載入個性化稱呼以配合 emotional_support
+                            import settings_manager
+                            patient_name = settings_manager.load_settings().get("patient_name", "奴才")
+                            
                             if action == "reminiscence": intent_hint = "(提示：長輩正在回憶過去，請用傾聽和好奇的口吻引導他們多說一點。)"
                             elif action == "praise_affirmation": intent_hint = "(提示：長輩需要肯定，請大力稱讚他們的行為！)"
-                            elif action == "emotional_support": intent_hint = "(提示：長輩心情低落或寂寞，請用非常溫柔撒嬌的語氣安撫他們。)"
+                            elif action == "emotional_support": intent_hint = (
+                                f"(提示：{patient_name}現在心情不好、感到寂寞或難過，請為他生成一段無比輕鬆、自然且溫暖的擬貓語安慰文字。\n"
+                                f"【結構要求】必須嚴格分為四段，每段一小句，且總體字數在60字以內：\n"
+                                f"1. 開場打招呼 (如：喵～今天好像有點累呢)\n"
+                                f"2. 表達關心 (如：本喵注意到你心情不太好，別擔心)\n"
+                                f"3. 提出小建議 (如：或許喝點熱茶、吃點小點心會舒服些)\n"
+                                f"4. 收尾溫暖 (如：本喵會在旁邊陪著你，慢慢就會好起來喵～)\n"
+                                f"【核心約束】限制「喵～」在整段對話中只出現 1 到 2 次，避免過度重複撒嬌，語氣像一個充滿靈性的陪伴型貓咪機器人，簡單自然。禁止輸出任何 Markdown 符號或換行符。)"
+                            )
                             elif action == "health_query": intent_hint = "(提示：長輩在詢問健康或回報數據，請關心他們，但絕對不要給醫療診斷。)"
                             
                             augmented_prompt = transcription
@@ -277,7 +344,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         else:
                             response = "我不太確定該怎麼做，您可以再說一次嗎？"
 
-                        print(f"Spark [{brain.mode.upper()} | {brain.text_model}]: {response}")
+                        print(f"[{get_timestamp()}] Spark [{brain.mode.upper()} | {brain.text_model}]: {response}")
 
                         # Send transcript to UI
                         transcript_queue.put((transcription, response))

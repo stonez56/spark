@@ -18,7 +18,7 @@ def run_refinement_test():
     
     # 2. 測試 0ms 系統時間攔截器
     print("\n[Step 2] 測試本地 0ms 時間/日期攔截器...")
-    time_queries = ["現在幾點", "今天星期幾", "今天幾號", "今天幾月幾號"]
+    time_queries = ["現在幾點", "今天星期幾", "今天幾號", "今天幾月幾號", "今天是星期几", "幾月幾日"]
     for q in time_queries:
         start_time = time.time()
         response = brain.generate_response(q)

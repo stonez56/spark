@@ -5,7 +5,8 @@ SETTINGS_FILE = 'settings.json'
 
 DEFAULT_SETTINGS = {
     "patient_name": "奴才",
-    "caregiver_name": "Mimo"
+    "caregiver_name": "Mimo",
+    "speaking_speed": "normal"
 }
 
 def load_settings():

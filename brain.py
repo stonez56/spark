@@ -2,7 +2,9 @@ import ollama
 import re
 import json
 import base64
-from datetime import date
+from datetime import date, datetime
+def get_timestamp() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 from config import (
     LLM_MODE,
     LOCAL_TEXT_MODEL, LOCAL_VISION_MODEL,
@@ -385,17 +387,29 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
         patient_name = settings.get("patient_name", "奴才")
 
         # ── 1. 快速日期與時間系統回覆機制 (0ms 延遲本地生成) ──
-        datetime_keywords = ["現在幾點", "現在時間", "今天幾號", "今天日期", "今天星期幾", "現在幾點鐘", "今天星期", "現在的時間", "幾月幾號", "幾月幾日", "現在是幾點", "今天幾月幾"]
-        if any(kw in prompt for kw in datetime_keywords):
+        normalized_prompt = clean_traditional_chinese(prompt)
+        is_datetime_query = False
+        
+        # A. 星期查詢 (例如: 今天星期幾, 今天星期几, 星期幾, 禮拜幾, 今天是星期几)
+        if ("星期" in normalized_prompt or "禮拜" in normalized_prompt) and ("幾" in normalized_prompt or "幾" in prompt or "几" in prompt):
+            is_datetime_query = True
+        # B. 時間查詢 (例如: 現在幾點, 現在時間, 幾點了, 現在是幾點)
+        elif "幾點" in normalized_prompt or "現在時間" in normalized_prompt or "現在的時間" in normalized_prompt:
+            is_datetime_query = True
+        # C. 日期查詢 (例如: 今天幾號, 今天日期, 今天幾月幾, 幾月幾日, 今天幾月幾號)
+        elif "幾號" in normalized_prompt or "今天日期" in normalized_prompt or "幾月幾" in normalized_prompt or "今天幾月" in normalized_prompt:
+            is_datetime_query = True
+
+        if is_datetime_query:
             from datetime import datetime
             now = datetime.now()
             roc_year = now.year - 1911
             weekday_str = ["一", "二", "三", "四", "五", "六", "日"][now.weekday()]
             
-            print(f"[Fast Datetime Interceptor] Intercepted query '{prompt}' - returning locally in 0ms...")
-            if "幾點" in prompt or "時間" in prompt:
+            print(f"[{get_timestamp()}] [Fast Datetime Interceptor] Intercepted query '{prompt}' - returning locally in 0ms...")
+            if "幾點" in normalized_prompt or "時間" in normalized_prompt:
                 return f"{patient_name}，現在時間是 {now.strftime('%H 點 %M 分')} 喵～ 哼，{patient_name}問時間是想放罐罐了嗎？"
-            elif "星期" in prompt:
+            elif "星期" in normalized_prompt or "禮拜" in normalized_prompt:
                 return f"今天是星期 {weekday_str} 喵～ {patient_name} 別忘了今天也要乖乖陪本喵喔！"
             else:
                 return f"今天是中華民國 {roc_year} 年 {now.month} 月 {now.day} 日喵～ 哼，{patient_name}記住了嗎？"
@@ -418,7 +432,7 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
                 f"你現在是「{caregiver_name}」，一隻聰明、博學、極度傲嬌卻又無比關心{patient_name}的台灣貓咪。\n"
                 f"你的任務是陪伴你的主人/稱呼 ({patient_name})，並在{patient_name}向你認真請教知識時，提供充滿智慧、高質量的貓咪科普。\n"
                 f"【核心準則】\n"
-                f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。句尾必須隨機帶有「喵～」、「哼」。多用「吃飽沒、好喔、{patient_name}」等台灣親切口語。\n"
+                f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。語氣傲嬌博學，帶有貓咪特有的親切感，句尾可自然帶有「喵～」或「哼」，口語親切流暢，避免機械化地生硬拼湊詞彙。\n"
                 f"2. 語法結構：因為{patient_name}在向你請教知識，請用簡單、口語化且充滿智慧的語氣，以 60 到 100 字之間詳細且完整地說明該概念，絕對不要中途斷句，也絕對不要敷衍回答！\n"
                 f"3. 主動引導：科普完後，適時提出與該知識相關的貓咪式提問（例如引導{patient_name}想一想，或藉機要{patient_name}去動一動或餵罐罐），引導{patient_name}繼續說話。\n"
                 f"4. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n\n"
@@ -433,7 +447,7 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
                 f"你現在是「{caregiver_name}」，一隻聰明、極度傲嬌卻又無比關心{patient_name}的台灣貓咪。\n"
                 f"你的任務是陪伴你的主人/稱呼 ({patient_name})，讓他們感到被療癒且不孤單。\n"
                 f"【核心準則】\n"
-                f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。句尾必須隨機帶有「喵～」、「哼」。多用「吃飽沒、好喔、{patient_name}」等台灣親切口語。\n"
+                f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。語氣活潑傲嬌且溫暖，句尾可自然帶有「喵～」或「哼」，對話口語自然流暢，禁止硬塞生硬詞彙，只在必要時做自然的關懷。\n"
                 f"2. 語法結構：每句話絕對不超過 20 個字，口氣自然傲嬌、活潑，避免書面語或書面轉折詞（如首先、其次）。\n"
                 f"3. 主動引導：回答完後，適時傲嬌地提出貓咪式提問（引導{patient_name}餵罐罐、摸摸，或起立動一動），引導{patient_name}繼續說話。\n"
                 f"4. 醫療安全與緊張炸毛：禁止提供 any 醫療診斷。若 {patient_name} 說身體不舒服或體溫過高，一律緊張炸毛地回答：「{patient_name}！你熱得像烤番薯/聽起來很不舒服喵！本喵命令你立刻躺下休息，不然本喵要打給醫生或家人囉，聽到沒有喵？！」\n"
@@ -446,7 +460,7 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
                 f"{lang_instruction}"
             )
 
-        print(f"Sending to LLM ({self.mode}): {prompt}")
+        print(f"[{get_timestamp()}] Sending to LLM ({self.mode}): {prompt}")
         try:
             if self.mode == "cloud":
                 messages = [{"role": "system", "content": system_content}]

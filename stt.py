@@ -16,11 +16,23 @@ class SparkSTT:
         audio_float32 = audio_data.astype(np.float32) / 32768.0
         
         print("Transcribing audio...")
-        # Removed language="en" to allow auto-detection of Chinese or English
-        segments, info = self.model.transcribe(audio_float32, beam_size=5)
+        # 加上繁體 initial_prompt，強烈引導 Whisper 輸出台灣繁體中文
+        segments, info = self.model.transcribe(
+            audio_float32, 
+            beam_size=5,
+            initial_prompt="以下是繁體中文的對話，使用台灣繁體字形，避免簡體字。"
+        )
         
         text = ""
         for segment in segments:
             text += segment.text + " "
             
-        return text.strip()
+        raw_text = text.strip()
+        
+        # 雙重防線：透過大腦的簡繁轉換工具進行後處理轉換，確保 100% 繁體字形
+        try:
+            from brain import clean_traditional_chinese
+            cleaned_text = clean_traditional_chinese(raw_text)
+            return cleaned_text
+        except Exception:
+            return raw_text

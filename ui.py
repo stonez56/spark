@@ -140,6 +140,8 @@ async def update_settings(payload: dict):
         settings["patient_name"] = payload["patient_name"]
     if "caregiver_name" in payload:
         settings["caregiver_name"] = payload["caregiver_name"]
+    if "speaking_speed" in payload:
+        settings["speaking_speed"] = payload["speaking_speed"]
     settings_manager.save_settings(settings)
     
     if hasattr(app.state, 'command_queue'):
