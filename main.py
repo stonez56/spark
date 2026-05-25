@@ -223,6 +223,13 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                             ack_duration = len(ack_audio) / (audio_cache.SAMPLE_RATE * 2)
                             time.sleep(ack_duration + 0.1)  # +0.1s margin
                         
+                        # ── Flush Stale Audio Buffer (WebSockets) ──────────
+                        while not audio_queue.empty():
+                            try:
+                                audio_queue.get_nowait()
+                            except:
+                                break
+
                         # ── Now enter LISTENING ────────────────────────────
                         sm.transition(SparkState.LISTENING)
                         state_queue.put(SparkState.LISTENING)

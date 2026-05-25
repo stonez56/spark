@@ -135,12 +135,16 @@ def initialize(tts):
     Only synthesises and overwrites files that actually contain patient_name
     when the name changes. Static filler files are always preserved and reused.
     """
-    global _CACHE
+    global _CACHE, _PURR_PAD
+    if '_PURR_PAD' not in globals():
+        _PURR_PAD = b''
+    if not _PURR_PAD:
+        print("[AudioCache] Generating purring sound effect (呼嚕聲)...")
+        _PURR_PAD = tts.synthesize("呼嚕呼嚕... 呼嚕呼嚕... 呼嚕呼嚕... 呼嚕呼嚕...")
+        
     settings     = settings_manager.load_settings()
     patient_name = settings.get("patient_name", "奴才")
     fillers      = get_fillers(patient_name)
-
-    silence_pad  = _make_silence(SILENCE_PAD_SECS)
     meta         = _load_meta()
     old_name     = meta.get("patient_name", "")
     name_changed = (old_name != patient_name)
@@ -169,7 +173,7 @@ def initialize(tts):
             if need_synth:
                 audio_bytes = tts.synthesize(phrase)
                 if intent != "wake_word_ack":
-                    audio_bytes = audio_bytes + silence_pad
+                    audio_bytes = audio_bytes + _PURR_PAD
                 with open(pcm_fpath, "wb") as f:
                     f.write(audio_bytes)
                 new_cache[intent].append(audio_bytes)
