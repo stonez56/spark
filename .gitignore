@@ -8,12 +8,13 @@ __pycache__
 # Remove audio_catch_data
 audio_cache_data/*.*
 
-chroma_db/*.*
+
 
 *.db
 .venv
 opencode
 length.bin
-spark_memory.db
 
+spark_memory.db
 mimo_chroma_db/*.*
+chroma_db/*.*
