@@ -53,6 +53,36 @@ def clean_traditional_chinese(text: str) -> str:
     return "".join(S2T_DICT.get(c, c) for c in text)
 
 
+def filter_degenerative_repetition(text: str) -> str:
+    """
+    Detect and truncate degenerative repetitive phrases (e.g. "準備好 準備好...")
+    to keep Mimo's response clean and prevent endless spam.
+    """
+    cleaned = text.strip()
+    if not cleaned:
+        return text
+        
+    # Regex to find consecutive repetitions of substrings of length 2 to 15, repeating 4 or more times.
+    # e.g., "準備好" repeated consecutively.
+    match = re.search(r"(.{2,15}?)\1{3,}", cleaned)
+    if match:
+        repeated_word = match.group(1)
+        print(f"[{get_timestamp()}] ⚠️ [Brain rep_filter] Repetitive loop detected on word '{repeated_word}'! Truncating response.")
+        
+        # Truncate at the first occurrence of the repetition sequence
+        first_idx = cleaned.find(repeated_word)
+        # We keep the first instance of the word, but remove the infinite loop after it.
+        truncated = cleaned[:first_idx + len(repeated_word)]
+        
+        # Ensure it has a cute, complete cat ending
+        if not truncated.endswith("喵～") and not truncated.endswith("喵"):
+            truncated += "喵～"
+        return truncated
+        
+    return text
+
+
+
 class OllamaBrain:
     def __init__(self):
         self.mode = LLM_MODE
@@ -148,6 +178,11 @@ class OllamaBrain:
         try:
             system_prompt = next((m["content"] for m in messages if m["role"] == "system"), "")
             user_prompt = next((m["content"] for m in messages if m["role"] == "user"), "")
+            
+            # 依據 prompt 決定適當的 num_predict (防範 1B 小模型重複退化)
+            is_knowledge = any(kw in user_prompt.lower() for kw in ["什麼是", "解釋", "介紹", "如何", "怎麼", "為何", "為什麼", "說明", "llm", "ai", "gpt", "科技", "科普"])
+            limit_predict = 180 if is_knowledge else 60
+            
             ollama_response = ollama.chat(
                 model=LOCAL_TEXT_MODEL,
                 messages=[
@@ -155,23 +190,28 @@ class OllamaBrain:
                     {'role': 'user', 'content': user_prompt}
                 ],
                 keep_alive=-1,
-                options={"temperature": 0.3}
+                options={"temperature": 0.4, "repeat_penalty": 1.2, "num_predict": limit_predict}
             )
             return ollama_response['message']['content'].strip()
         except Exception as local_err:
             print(f"🚨 [Ollama] Local fallback also failed: {local_err}")
             raise last_error if last_error else local_err
 
-    def _local_generate(self, prompt: str, **kwargs) -> str:
+    def _local_generate(self, prompt: str, options: dict = None, **kwargs) -> str:
         """Send a generate request to local Ollama and return the response string."""
+        default_options = {"temperature": 0.4, "repeat_penalty": 1.2, "num_predict": 60}
+        if options:
+            default_options.update(options)
+            
         response = ollama.generate(
             model=self.text_model,
             prompt=prompt,
             keep_alive=-1,
-            options={"temperature": 0.3},
+            options=default_options,
             **kwargs
         )
         return response['response'].strip()
+
 
     def warmup(self):
         if self.mode == "cloud":
@@ -472,8 +512,16 @@ User: 都沒人來陪我 → {"action": "emotional_support"}
                 full_prompt = f"{system_content}\n\nUser: {prompt}\nSpark:"
                 if context_history:
                     full_prompt = f"Previous Context:\n{context_history}\n\n" + full_prompt
-                res = self._local_generate(full_prompt) # 徹底不傳 max_tokens
-            return clean_traditional_chinese(res)
+                
+                # 依據 prompt 屬性決定 local 生成的最大 token 限制，強防重複退化死循環
+                limit_predict = 180 if is_knowledge_query else 60
+                res = self._local_generate(
+                    full_prompt,
+                    options={"temperature": 0.4, "repeat_penalty": 1.2, "num_predict": limit_predict}
+                )
+            
+            final_res = clean_traditional_chinese(res)
+            return filter_degenerative_repetition(final_res)
         except Exception as e:
             print(f"Error generating response: {e}")
             return "I'm having trouble thinking right now."
