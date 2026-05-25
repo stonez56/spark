@@ -127,77 +127,66 @@ def _save_meta(data: dict):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def _cache_is_valid(patient_name: str, fillers: dict) -> bool:
-    """Return True if disk cache matches current settings and all files exist."""
-    meta = _load_meta()
-    if meta.get("patient_name") != patient_name:
-        return False
-    # Check every expected file exists
-    for intent, phrases in fillers.items():
-        for idx in range(len(phrases)):
-            if not os.path.exists(_pcm_path(intent, idx)):
-                return False
-    return True
-
-
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def initialize(tts):
     """
-    Load filler audio cache from disk if valid; otherwise synthesise and persist.
-    Wake-word ack phrases get NO silence pad.  All other fillers get SILENCE_PAD_SECS appended.
+    Load filler audio cache from disk granularly.
+    Only synthesises and overwrites files that actually contain patient_name
+    when the name changes. Static filler files are always preserved and reused.
     """
     global _CACHE
     settings     = settings_manager.load_settings()
-    patient_name = settings.get("patient_name", "阿公")
+    patient_name = settings.get("patient_name", "奴才")
     fillers      = get_fillers(patient_name)
 
     silence_pad  = _make_silence(SILENCE_PAD_SECS)
+    meta         = _load_meta()
+    old_name     = meta.get("patient_name", "")
+    name_changed = (old_name != patient_name)
 
-    if _cache_is_valid(patient_name, fillers):
-        # ── Fast path: load from disk ──────────────────────────────────────
-        print("[AudioCache] Loading filler audios from disk cache...")
-        new_cache: dict[str, list[bytes]] = {}
-        for intent, phrases in fillers.items():
-            new_cache[intent] = []
-            for idx in range(len(phrases)):
-                with open(_pcm_path(intent, idx), "rb") as f:
-                    new_cache[intent].append(f.read())
-        _CACHE = new_cache
-        total = sum(len(v) for v in _CACHE.values())
-        print(f"[AudioCache] Loaded {total} filler audios from cache.")
-        return
-
-    # ── Slow path: synthesise and save ────────────────────────────────────
-    print("\n[AudioCache] Synthesizing filler audios (this may take a few seconds)...")
     os.makedirs(CACHE_DIR, exist_ok=True)
-    new_cache = {}
+    new_cache: dict[str, list[bytes]] = {}
+
+    print(f"[AudioCache] Granular initializing fillers (Owner: '{patient_name}' | Name Changed: {name_changed})...")
+    
+    total_loaded = 0
+    total_synthesized = 0
 
     for intent, phrases in fillers.items():
         new_cache[intent] = []
         for idx, phrase in enumerate(phrases):
-            audio_bytes = tts.synthesize(phrase)
-
-            # Append silence pad to every intent EXCEPT wake-word ack
-            if intent != "wake_word_ack":
-                audio_bytes = audio_bytes + silence_pad
-
-            # Persist to disk
-            with open(_pcm_path(intent, idx), "wb") as f:
-                f.write(audio_bytes)
-
-            new_cache[intent].append(audio_bytes)
+            pcm_fpath = _pcm_path(intent, idx)
+            
+            # 判斷這句是否包含動態稱呼
+            is_dynamic = (patient_name in phrase)
+            
+            # 決定是否重新合成該特定音訊檔：
+            # 1. 該 pcm 檔在磁碟上不存在
+            # 2. 或者：這是一個動態句子，且使用者姓名發生了變更
+            need_synth = (not os.path.exists(pcm_fpath)) or (is_dynamic and name_changed)
+            
+            if need_synth:
+                audio_bytes = tts.synthesize(phrase)
+                if intent != "wake_word_ack":
+                    audio_bytes = audio_bytes + silence_pad
+                with open(pcm_fpath, "wb") as f:
+                    f.write(audio_bytes)
+                new_cache[intent].append(audio_bytes)
+                total_synthesized += 1
+            else:
+                with open(pcm_fpath, "rb") as f:
+                    audio_bytes = f.read()
+                new_cache[intent].append(audio_bytes)
+                total_loaded += 1
 
     _CACHE = new_cache
     _save_meta({"patient_name": patient_name})
-    total = sum(len(v) for v in _CACHE.values())
-    print(f"[AudioCache] Successfully cached {total} filler audios to disk.")
+    print(f"[AudioCache] Loaded {total_loaded} static files, synthesized {total_synthesized} dynamic files.")
 
 
 def regenerate(tts):
     """Force re-synthesis (called when settings change)."""
-    # Invalidate meta so _cache_is_valid returns False
-    _save_meta({})
     initialize(tts)
 
 

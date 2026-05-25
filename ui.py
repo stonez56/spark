@@ -136,18 +136,26 @@ async def get_settings():
 @app.post("/api/settings")
 async def update_settings(payload: dict):
     settings = settings_manager.load_settings()
+    need_regenerate = False
+    
     if "patient_name" in payload:
-        settings["patient_name"] = payload["patient_name"]
+        if payload["patient_name"] != settings.get("patient_name"):
+            settings["patient_name"] = payload["patient_name"]
+            need_regenerate = True
+            
     if "caregiver_name" in payload:
         settings["caregiver_name"] = payload["caregiver_name"]
+        
     if "speaking_speed" in payload:
         settings["speaking_speed"] = payload["speaking_speed"]
+        
     settings_manager.save_settings(settings)
     
-    if hasattr(app.state, 'command_queue'):
+    if need_regenerate and hasattr(app.state, 'command_queue'):
         app.state.command_queue.put({'type': 'regenerate_cache'})
         
     return JSONResponse({"status": "ok"})
+
 
 
 

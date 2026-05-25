@@ -87,14 +87,35 @@ class TestSparkUI(unittest.TestCase):
     @patch('ui.settings_manager')
     def test_post_settings(self, mock_settings):
         """Test POST /api/settings saves and triggers cache regeneration command."""
-        mock_settings.load_settings.return_value = {"patient_name": "阿公", "caregiver_name": "小星"}
+        mock_settings.load_settings.return_value = {"patient_name": "阿公", "caregiver_name": "小星", "speaking_speed": "normal"}
         
         response = self.client.post("/api/settings", json={"patient_name": "阿嬤", "caregiver_name": "小花"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"status": "ok"})
         
-        mock_settings.save_settings.assert_called_once_with({"patient_name": "阿嬤", "caregiver_name": "小花"})
+        mock_settings.save_settings.assert_called_once_with({"patient_name": "阿嬤", "caregiver_name": "小花", "speaking_speed": "normal"})
         app.state.command_queue.put.assert_called_once_with({'type': 'regenerate_cache'})
+
+    @patch('ui.settings_manager')
+    def test_post_settings_no_patient_name_change(self, mock_settings):
+        """Test POST /api/settings does not trigger cache regeneration when patient_name does not change."""
+        mock_settings.load_settings.return_value = {"patient_name": "阿公", "caregiver_name": "小星", "speaking_speed": "normal"}
+        
+        # Scenario A: patient_name in payload is identical to existing
+        response = self.client.post("/api/settings", json={"patient_name": "阿公", "caregiver_name": "小花"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+        mock_settings.save_settings.assert_any_call({"patient_name": "阿公", "caregiver_name": "小花", "speaking_speed": "normal"})
+        
+        # Scenario B: patient_name not even in payload
+        response = self.client.post("/api/settings", json={"caregiver_name": "大毛", "speaking_speed": "fast"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"status": "ok"})
+        mock_settings.save_settings.assert_any_call({"patient_name": "阿公", "caregiver_name": "大毛", "speaking_speed": "fast"})
+        
+        # Ensure command_queue was never called
+        app.state.command_queue.put.assert_not_called()
+
 
     def test_get_status(self):
         """Test GET /api/status returns current mode and model."""
