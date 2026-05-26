@@ -21,6 +21,8 @@ from brain import OllamaBrain
 from stt import SparkSTT
 from tts import SparkTTS
 from config import LLM_MODE, LOCAL_TEXT_MODEL, CLOUD_TEXT_MODEL
+from oled_controller import OLEDController
+from camera_controller import CameraController
 
 def get_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -50,6 +52,14 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
     # Report initial mode/model to UI
     _report_mode(state_queue, brain)
     active_silence_timeout = 1.8  # 預設自適應靜音斷句超時時間
+    
+    # Initialize OLED and Camera controllers
+    oled_ctrl = OLEDController(sm)
+    oled_ctrl.start()
+    
+    camera_ctrl = CameraController(sm, command_queue)
+    camera_ctrl.start()
+    
     sm.transition(SparkState.IDLE)
     state_queue.put(SparkState.IDLE)
     print(f"All models loaded. Ready for interaction! [Mode: {brain.mode} | Model: {brain.text_model}]")
@@ -201,6 +211,44 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 import audio_cache
                 audio_cache.regenerate(tts)
                 continue
+            elif cmd['type'] == 'wakeup':
+                print("\n[System] Mimo detected owner's face and woke up!")
+                sm.transition(SparkState.ATTENTIVE)
+                state_queue.put(SparkState.ATTENTIVE)
+                
+                import settings_manager
+                patient_name = settings_manager.load_settings().get("patient_name", "奴才")
+                
+                import audio_cache
+                ack_audio = audio_cache.get_random_filler("wake_word_ack")
+                if ack_audio:
+                    tts_queue.put(ack_audio)
+                
+                prompt = f"(系統提示：你剛打盹睜開眼睛，看見了你的主人/稱呼{patient_name}就在你面前。請用非常驚喜、傲嬌但熱情關心{patient_name}的貓咪口吻打招呼，句尾加上喵～，長度在20字以內。)"
+                response = brain.generate_response(prompt, f"看見了{patient_name}")
+                transcript_queue.put(("[主動喚醒]", response))
+                
+                time.sleep(1.5)
+                
+                sm.transition(SparkState.SPEAKING)
+                state_queue.put(SparkState.SPEAKING)
+                stop_audio_flag.clear()
+                
+                audio_output = tts.synthesize(response)
+                tts_queue.put(audio_output)
+                
+                audio_duration = len(audio_output) / (22050 * 2)
+                elapsed = 0
+                step = 0.05
+                while elapsed < audio_duration:
+                    if stop_audio_flag.is_set():
+                        break
+                    time.sleep(step)
+                    elapsed += step
+                
+                sm.transition(SparkState.IDLE)
+                state_queue.put(SparkState.IDLE)
+                continue
 
         if not audio_queue.empty():
             audio_bytes = audio_queue.get()
@@ -331,7 +379,9 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                             handle_emergency()
                         elif action == "take_photo":
                             import os
-                            if os.path.exists("./1.jpg"):
+                            # Capture frame in a thread-safe, non-conflicting background manner
+                            success = camera_ctrl.capture_to_file("./1.jpg")
+                            if success and os.path.exists("./1.jpg"):
                                 vision_desc = brain.analyze_image("./1.jpg", transcription)
                                 lang = brain._detect_language(transcription)
                                 translated_desc = brain.translate(vision_desc, lang)
@@ -340,7 +390,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                                 else:
                                     response = f"Let me look at that. {translated_desc}"
                             else:
-                                response = "對不起，我現在沒有接上眼睛（攝影機），看不到。"
+                                response = "對不起，本喵現在沒有接上眼睛（攝影機），看不到喵。"
                         elif action == "search_web":
                             response = brain.search_web(transcription)
                         elif action == "swap_model":

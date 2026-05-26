@@ -15,3 +15,5 @@ python-dotenv
 g2pw
 unicode_rbnf
 sentence-stream
+luma.oled
+opencv-python

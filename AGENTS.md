@@ -15,11 +15,12 @@ python main.py
 ## LLM Modes
 
 Edit `config.py` to switch:
-- `LLM_MODE = "local"` (default) — uses Ollama (gemma3:1b / llama3.2:3b + moondream)
+- `LLM_MODE = "local"` (default) — uses Ollama (gemma2:2b / llama3.2:3b + moondream)
 - `LLM_MODE = "cloud"` — uses OpenRouter API (free tier: 50 req/day)
 
 Recommended models in `config.py`:
-- Local: `gemma3:1b`
+- Local: `gemma2:2b`
+
 - Cloud text: `qwen/qwen3-next-80b-a3b-instruct:free` (per MimoPRD for optimal T-Chinese)
 - Cloud vision: `qwen/qwen2.5-vl-72b-instruct:free`
 

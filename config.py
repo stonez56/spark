@@ -20,13 +20,13 @@ load_dotenv()
 # ──────────────────────────────────────────
 # MAIN SWITCH: "local" or "cloud"
 # ──────────────────────────────────────────
-LLM_MODE = "cloud"
+LLM_MODE = "local"
 
 # ──────────────────────────────────────────
 # LOCAL (Ollama) settings
 # ──────────────────────────────────────────
-#LOCAL_TEXT_MODEL   = "llama3.2:3b"
-LOCAL_TEXT_MODEL   = "gemma3:1b"
+LOCAL_TEXT_MODEL   = "llama3.2:3b"
+#LOCAL_TEXT_MODEL   = "gemma4:e2b"
 LOCAL_VISION_MODEL = "moondream"
 
 # ──────────────────────────────────────────

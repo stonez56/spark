@@ -157,6 +157,17 @@ async def update_settings(payload: dict):
     return JSONResponse({"status": "ok"})
 
 
+@app.post("/api/reset-db")
+async def reset_db_endpoint():
+    try:
+        from reset_db import reset_database
+        reset_database()
+        return JSONResponse({"status": "ok", "message": "記憶與資料庫已完全清除喵！"})
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"清除失敗：{str(e)}"}, status_code=500)
+
+
+
 
 
 async def broadcast(message: dict):

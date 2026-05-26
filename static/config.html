@@ -263,6 +263,21 @@
         </div>
     </div>
 
+    <!-- Database/Memory Reset Panel -->
+    <div class="panel" style="border-color: rgba(239, 68, 68, 0.3);">
+        <h2 style="color: #ef4444;">🧹 記憶與系統清除 (System Reset)</h2>
+        <p style="font-size: 14px; color: #aaa; margin-bottom: 15px; line-height: 1.5;">
+            清除本喵所有的對話記憶、語意檢索資料以及排程提醒。注意：此動作執行後將無法復原喵！
+        </p>
+        <div style="display:flex; align-items:center; gap:10px;">
+            <button class="btn-primary" id="reset-db-btn" onclick="confirmResetDB()" style="background: linear-gradient(135deg, #ef4444, #b91c1c); color: white;">
+                💥 徹底清除本喵的記憶
+            </button>
+            <div id="reset-spinner" class="spinner" style="border-top-color: #ef4444;"></div>
+            <span id="reset-msg" style="font-size:13px; display:none;"></span>
+        </div>
+    </div>
+
 </div>
 
 <script>
@@ -414,6 +429,44 @@
             loadReminders();
         }
     }
+
+    async function confirmResetDB() {
+        const consent = confirm('哼！你確定要清除本喵所有的記憶與排程嗎喵？\n這會讓本喵把你的點點滴滴忘得一乾二淨喔！(此動作無法復原)');
+        if (!consent) return;
+        
+        const btn = document.getElementById('reset-db-btn');
+        const spinner = document.getElementById('reset-spinner');
+        const msg = document.getElementById('reset-msg');
+        
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        spinner.style.display = 'block';
+        msg.style.display = 'inline';
+        msg.style.color = '#ef4444';
+        msg.innerText = '正在清除記憶，別後悔喔喵...';
+        
+        try {
+            const res = await fetch('/api/reset-db', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                msg.style.color = '#10b981';
+                msg.innerText = '哼，本喵已經把記憶全都忘光光了喵！';
+                await loadReminders();
+            } else {
+                msg.style.color = '#ef4444';
+                msg.innerText = data.message || '清除失敗';
+            }
+        } catch(e) {
+            msg.style.color = '#ef4444';
+            msg.innerText = '連線失敗，無法重設';
+        } finally {
+            btn.disabled = false;
+            btn.style.opacity = '1';
+            spinner.style.display = 'none';
+            setTimeout(() => msg.style.display = 'none', 5000);
+        }
+    }
+
 
     // Init
     fetchStatus();

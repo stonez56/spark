@@ -179,38 +179,19 @@ class OllamaBrain:
             system_prompt = next((m["content"] for m in messages if m["role"] == "system"), "")
             user_prompt = next((m["content"] for m in messages if m["role"] == "user"), "")
             
-            # 依據 prompt 決定適當的 num_predict (防範 1B 小模型重複退化)
-            is_knowledge = any(kw in user_prompt.lower() for kw in ["什麼是", "解釋", "介紹", "如何", "怎麼", "為何", "為什麼", "說明", "llm", "ai", "gpt", "科技", "科普"])
-            limit_predict = 180 if is_knowledge else 60
-            
-            ollama_response = ollama.chat(
-                model=LOCAL_TEXT_MODEL,
-                messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt}
-                ],
-                keep_alive=-1,
-                options={"temperature": 0.4, "repeat_penalty": 1.2, "num_predict": limit_predict}
-            )
-            return ollama_response['message']['content'].strip()
+            merged_prompt = f"{system_prompt}\n\nUser Input: {user_prompt}" if system_prompt else user_prompt
+            return self._local_generate(merged_prompt)
         except Exception as local_err:
             print(f"🚨 [Ollama] Local fallback also failed: {local_err}")
             raise last_error if last_error else local_err
 
     def _local_generate(self, prompt: str, options: dict = None, **kwargs) -> str:
-        """Send a generate request to local Ollama and return the response string."""
-        default_options = {"temperature": 0.4, "repeat_penalty": 1.2, "num_predict": 60}
-        if options:
-            default_options.update(options)
-            
-        response = ollama.generate(
+        """Send a generate request to local Ollama using chat API with minimal parameters."""
+        response = ollama.chat(
             model=self.text_model,
-            prompt=prompt,
-            keep_alive=-1,
-            options=default_options,
-            **kwargs
+            messages=[{'role': 'user', 'content': prompt}]
         )
-        return response['response'].strip()
+        return response['message']['content'].strip()
 
 
     def warmup(self):
@@ -219,10 +200,15 @@ class OllamaBrain:
             return
         print(f"Warming up text model '{self.text_model}' and vision model '{self.vision_model}'...")
         try:
-            ollama.generate(model=self.text_model, prompt="Hello", keep_alive=-1, options={"num_predict": 1})
+            if self.text_model == "gemma4:e2b":
+                ollama.chat(model=self.text_model, messages=[{'role': 'user', 'content': 'Hello'}])
+            else:
+                ollama.generate(model=self.text_model, prompt="Hello", keep_alive=-1, options={"num_predict": 1})
             print(f"Model '{self.text_model}' is warmed up and ready!")
-            ollama.generate(model=self.vision_model, prompt="Hello", keep_alive=-1, options={"num_predict": 1})
-            print(f"Model '{self.vision_model}' is warmed up and ready!")
+            
+            if self.vision_model == "moondream":
+                ollama.generate(model=self.vision_model, prompt="Hello", keep_alive=-1, options={"num_predict": 1})
+                print(f"Model '{self.vision_model}' is warmed up and ready!")
         except Exception as e:
             print(f"Error warming up Ollama models: {e}")
 
@@ -393,19 +379,30 @@ Output no other text."""
 
         print("Falling back to local LLM for intent routing...")
         try:
+            merged_prompt = f"{system_prompt}\n\nUser Input: {user_input}"
             response = ollama.chat(
                 model=LOCAL_TEXT_MODEL,
                 messages=[
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_input}
-                ],
-                format='json',
-                keep_alive=-1,
-                options={"num_predict": 15, "temperature": 0.0}
+                    {'role': 'user', 'content': merged_prompt}
+                ]
             )
-            content = response['message']['content']
+            content = response['message']['content'].strip()
+            
+            # 手動過濾可能的 Markdown 標記，因為我們移除了 format='json'
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0].strip()
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0].strip()
+                
             import json
-            parsed = json.loads(content)
+            import re
+            # 嘗試找尋第一個 { ... }
+            match = re.search(r'\{.*?\}', content, re.DOTALL)
+            if match:
+                parsed = json.loads(match.group(0))
+            else:
+                parsed = json.loads(content)
+                
             return parsed.get("action", "chat")
         except Exception as e:
             print(f"Intent routing fallback error: {e}")
@@ -522,7 +519,7 @@ Output no other text."""
                 messages.append({"role": "user", "content": prompt})
                 res = self._cloud_chat(messages)  # 徹底不傳 max_tokens
             else:
-                full_prompt = f"{system_content}\n\nUser: {prompt}\nSpark:"
+                full_prompt = f"{system_content}\n\nUser: {prompt}"
                 if context_history:
                     full_prompt = f"Previous Context:\n{context_history}\n\n" + full_prompt
                 
@@ -530,7 +527,7 @@ Output no other text."""
                 limit_predict = 180 if is_knowledge_query else 60
                 res = self._local_generate(
                     full_prompt,
-                    options={"temperature": 0.4, "repeat_penalty": 1.2, "num_predict": limit_predict}
+                    options={"temperature": 0.4, "repeat_penalty": 1.05, "num_predict": limit_predict}
                 )
             
             final_res = clean_traditional_chinese(res)
