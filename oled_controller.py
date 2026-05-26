@@ -119,7 +119,7 @@ class OLEDController:
                 time.sleep(1)
 
     def _draw_face(self, state, frame, blink_frame) -> Image.Image:
-        # Create 1-bit canvas
+        # Create 1-bit canvas (0 = black, 255 = fully lit white)
         img = Image.new("1", (128, 64), 0)
         draw = ImageDraw.Draw(img)
         
@@ -129,33 +129,33 @@ class OLEDController:
         
         if state == SparkState.LOADING:
             # Animated breathing Zzz bubbles for sleeping/loading state
-            draw.text((10, 25), "Mimo Loading...", fill=1)
+            draw.text((10, 25), "Mimo Loading...", fill=255)
             # Draw Zzz
             zzz_offset = (frame // 4) % 3
             for i in range(zzz_offset + 1):
                 x = 105 + i * 6
                 y = 20 - i * 5
                 size = 6 + i * 2
-                draw.text((x, y), "z", fill=1)
+                draw.text((x, y), "z", fill=255)
                 
         elif state == SparkState.IDLE:
             # Idle state: Wide open cute eyes with blink animation
             if blink_frame == 0 or blink_frame == 4:
                 # Half-closed eyes
-                draw.ellipse([left_eye_center[0]-10, left_eye_center[1]-5, left_eye_center[0]+10, left_eye_center[1]+5], fill=1)
-                draw.ellipse([right_eye_center[0]-10, right_eye_center[1]-5, right_eye_center[0]+10, right_eye_center[1]+5], fill=1)
+                draw.ellipse([left_eye_center[0]-10, left_eye_center[1]-5, left_eye_center[0]+10, left_eye_center[1]+5], fill=255)
+                draw.ellipse([right_eye_center[0]-10, right_eye_center[1]-5, right_eye_center[0]+10, right_eye_center[1]+5], fill=255)
             elif blink_frame == 1 or blink_frame == 3:
                 # Mostly closed eyes (slits)
-                draw.line([left_eye_center[0]-12, left_eye_center[1], left_eye_center[0]+12, left_eye_center[1]], fill=1, width=2)
-                draw.line([right_eye_center[0]-12, right_eye_center[1], right_eye_center[0]+12, right_eye_center[1]], fill=1, width=2)
+                draw.line([left_eye_center[0]-12, left_eye_center[1], left_eye_center[0]+12, left_eye_center[1]], fill=255, width=2)
+                draw.line([right_eye_center[0]-12, right_eye_center[1], right_eye_center[0]+12, right_eye_center[1]], fill=255, width=2)
             elif blink_frame == 2:
                 # Fully closed eyes (horizontal line)
-                draw.line([left_eye_center[0]-12, left_eye_center[1]+2, left_eye_center[0]+12, left_eye_center[1]+2], fill=1, width=2)
-                draw.line([right_eye_center[0]-12, right_eye_center[1]+2, right_eye_center[0]+12, right_eye_center[1]+2], fill=1, width=2)
+                draw.line([left_eye_center[0]-12, left_eye_center[1]+2, left_eye_center[0]+12, left_eye_center[1]+2], fill=255, width=2)
+                draw.line([right_eye_center[0]-12, right_eye_center[1]+2, right_eye_center[0]+12, right_eye_center[1]+2], fill=255, width=2)
             else:
                 # Normal wide eyes with light spots/catchlights
-                draw.ellipse([left_eye_center[0]-12, left_eye_center[1]-12, left_eye_center[0]+12, left_eye_center[1]+12], fill=1)
-                draw.ellipse([right_eye_center[0]-12, right_eye_center[1]-12, right_eye_center[0]+12, right_eye_center[1]+12], fill=1)
+                draw.ellipse([left_eye_center[0]-12, left_eye_center[1]-12, left_eye_center[0]+12, left_eye_center[1]+12], fill=255)
+                draw.ellipse([right_eye_center[0]-12, right_eye_center[1]-12, right_eye_center[0]+12, right_eye_center[1]+12], fill=255)
                 # Catchlight spots (white circles inside black)
                 draw.ellipse([left_eye_center[0]-4, left_eye_center[1]-8, left_eye_center[0]+2, left_eye_center[1]-2], fill=0)
                 draw.ellipse([right_eye_center[0]-4, right_eye_center[1]-8, right_eye_center[0]+2, right_eye_center[1]-2], fill=0)
@@ -166,8 +166,8 @@ class OLEDController:
         elif state == SparkState.LISTENING:
             # Ears twitching, extra large round eyes to represent paying attention
             pulse = int(2 * math.sin(frame * 0.3))
-            draw.ellipse([left_eye_center[0]-(13+pulse), left_eye_center[1]-(13+pulse), left_eye_center[0]+(13+pulse), left_eye_center[1]+(13+pulse)], fill=1)
-            draw.ellipse([right_eye_center[0]-(13+pulse), right_eye_center[1]-(13+pulse), right_eye_center[0]+(13+pulse), right_eye_center[1]+(13+pulse)], fill=1)
+            draw.ellipse([left_eye_center[0]-(13+pulse), left_eye_center[1]-(13+pulse), left_eye_center[0]+(13+pulse), left_eye_center[1]+(13+pulse)], fill=255)
+            draw.ellipse([right_eye_center[0]-(13+pulse), right_eye_center[1]-(13+pulse), right_eye_center[0]+(13+pulse), right_eye_center[1]+(13+pulse)], fill=255)
             # Inner sparkles
             draw.ellipse([left_eye_center[0]-3, left_eye_center[1]-7, left_eye_center[0]+3, left_eye_center[1]-1], fill=0)
             draw.ellipse([right_eye_center[0]-3, right_eye_center[1]-7, right_eye_center[0]+3, right_eye_center[1]-1], fill=0)
@@ -181,28 +181,28 @@ class OLEDController:
                 # Left eye spiral/dash
                 lx = int(left_eye_center[0] + r * math.cos(angle))
                 ly = int(left_eye_center[1] + r * math.sin(angle))
-                draw.line([left_eye_center[0], left_eye_center[1], lx, ly], fill=1, width=2)
-                draw.ellipse([left_eye_center[0]-r, left_eye_center[1]-r, left_eye_center[0]+r, left_eye_center[1]+r], outline=1)
+                draw.line([left_eye_center[0], left_eye_center[1], lx, ly], fill=255, width=2)
+                draw.ellipse([left_eye_center[0]-r, left_eye_center[1]-r, left_eye_center[0]+r, left_eye_center[1]+r], outline=255)
                 
                 # Right eye spiral/dash
                 rx = int(right_eye_center[0] + r * math.cos(angle + math.pi))
                 ry = int(right_eye_center[1] + r * math.sin(angle + math.pi))
-                draw.line([right_eye_center[0], right_eye_center[1], rx, ry], fill=1, width=2)
-                draw.ellipse([right_eye_center[0]-r, right_eye_center[1]-r, right_eye_center[0]+r, right_eye_center[1]+r], outline=1)
+                draw.line([right_eye_center[0], right_eye_center[1], rx, ry], fill=255, width=2)
+                draw.ellipse([right_eye_center[0]-r, right_eye_center[1]-r, right_eye_center[0]+r, right_eye_center[1]+r], outline=255)
                 
             self._draw_whiskers_and_nose(draw)
 
         elif state == SparkState.SPEAKING:
             # Normal wide eyes
-            draw.ellipse([left_eye_center[0]-11, left_eye_center[1]-11, left_eye_center[0]+11, left_eye_center[1]+11], fill=1)
-            draw.ellipse([right_eye_center[0]-11, right_eye_center[1]-11, right_eye_center[0]+11, right_eye_center[1]+11], fill=1)
+            draw.ellipse([left_eye_center[0]-11, left_eye_center[1]-11, left_eye_center[0]+11, left_eye_center[1]+11], fill=255)
+            draw.ellipse([right_eye_center[0]-11, right_eye_center[1]-11, right_eye_center[0]+11, right_eye_center[1]+11], fill=255)
             draw.ellipse([left_eye_center[0]-3, left_eye_center[1]-7, left_eye_center[0]+3, left_eye_center[1]-1], fill=0)
             draw.ellipse([right_eye_center[0]-3, right_eye_center[1]-7, right_eye_center[0]+3, right_eye_center[1]-1], fill=0)
             
             # Mouth waveform animation
             mouth_y = 48
             mouth_height = int(5 * math.sin(frame * 0.5)) + 6
-            draw.ellipse([64-8, mouth_y - mouth_height//2, 64+8, mouth_y + mouth_height//2], fill=1)
+            draw.ellipse([64-8, mouth_y - mouth_height//2, 64+8, mouth_y + mouth_height//2], fill=255)
             
             self._draw_whiskers_and_nose(draw, skip_mouth=True)
 
@@ -212,8 +212,8 @@ class OLEDController:
             self._draw_heart(draw, right_eye_center[0], right_eye_center[1] - 3, size=11)
             
             # Happy smiling mouth
-            draw.arc([64-6, 44, 64, 50], start=0, end=180, fill=1, width=2)
-            draw.arc([64, 44, 64+6, 50], start=0, end=180, fill=1, width=2)
+            draw.arc([64-6, 44, 64, 50], start=0, end=180, fill=255, width=2)
+            draw.arc([64, 44, 64+6, 50], start=0, end=180, fill=255, width=2)
             self._draw_whiskers_and_nose(draw, skip_mouth=True)
 
         elif state == SparkState.ANGRY:
@@ -222,49 +222,49 @@ class OLEDController:
             draw.polygon([(left_eye_center[0]-12, left_eye_center[1]-8), 
                           (left_eye_center[0]+12, left_eye_center[1]), 
                           (left_eye_center[0]+8, left_eye_center[1]+10),
-                          (left_eye_center[0]-12, left_eye_center[1]+4)], fill=1)
+                          (left_eye_center[0]-12, left_eye_center[1]+4)], fill=255)
             
             # Right angry eye (slanted downwards towards center)
             draw.polygon([(right_eye_center[0]+12, right_eye_center[1]-8), 
                           (right_eye_center[0]-12, right_eye_center[1]), 
                           (right_eye_center[0]-8, right_eye_center[1]+10),
-                          (right_eye_center[0]+12, right_eye_center[1]+4)], fill=1)
+                          (right_eye_center[0]+12, right_eye_center[1]+4)], fill=255)
             
             # Angry eyebrows
-            draw.line([left_eye_center[0]-15, left_eye_center[1]-13, left_eye_center[0]+12, left_eye_center[1]-2], fill=1, width=3)
-            draw.line([right_eye_center[0]+15, right_eye_center[1]-13, right_eye_center[0]-12, right_eye_center[1]-2], fill=1, width=3)
+            draw.line([left_eye_center[0]-15, left_eye_center[1]-13, left_eye_center[0]+12, left_eye_center[1]-2], fill=255, width=3)
+            draw.line([right_eye_center[0]+15, right_eye_center[1]-13, right_eye_center[0]-12, right_eye_center[1]-2], fill=255, width=3)
             
             # Angry wavy mouth
-            draw.line([64-8, 48, 64+8, 48], fill=1, width=2)
+            draw.line([64-8, 48, 64+8, 48], fill=255, width=2)
             self._draw_whiskers_and_nose(draw, skip_mouth=True)
 
         return img
 
     def _draw_whiskers_and_nose(self, draw, skip_mouth=False):
         # Draw tiny nose
-        draw.polygon([(64-3, 42), (64+3, 42), (64, 45)], fill=1)
+        draw.polygon([(64-3, 42), (64+3, 42), (64, 45)], fill=255)
         
         if not skip_mouth:
             # Standard cat w-mouth (curly smile)
-            draw.arc([64-6, 42, 64, 48], start=0, end=180, fill=1, width=1)
-            draw.arc([64, 42, 64+6, 48], start=0, end=180, fill=1, width=1)
+            draw.arc([64-6, 42, 64, 48], start=0, end=180, fill=255, width=1)
+            draw.arc([64, 42, 64+6, 48], start=0, end=180, fill=255, width=1)
             
         # Left whiskers
-        draw.line([25, 43, 8, 41], fill=1, width=1)
-        draw.line([25, 46, 5, 47], fill=1, width=1)
-        draw.line([25, 49, 9, 54], fill=1, width=1)
+        draw.line([25, 43, 8, 41], fill=255, width=1)
+        draw.line([25, 46, 5, 47], fill=255, width=1)
+        draw.line([25, 49, 9, 54], fill=255, width=1)
         
         # Right whiskers
-        draw.line([103, 43, 120, 41], fill=1, width=1)
-        draw.line([103, 46, 123, 47], fill=1, width=1)
-        draw.line([103, 49, 119, 54], fill=1, width=1)
+        draw.line([103, 43, 120, 41], fill=255, width=1)
+        draw.line([103, 46, 123, 47], fill=255, width=1)
+        draw.line([103, 49, 119, 54], fill=255, width=1)
 
     def _draw_heart(self, draw, cx, cy, size):
         # Draw heart by drawing two circles and a triangle
         r = size // 2
         # Left lobe
-        draw.ellipse([cx - size, cy - size, cx, cy], fill=1)
+        draw.ellipse([cx - size, cy - size, cx, cy], fill=255)
         # Right lobe
-        draw.ellipse([cx, cy - size, cx + size, cy], fill=1)
+        draw.ellipse([cx, cy - size, cx + size, cy], fill=255)
         # Bottom triangle
-        draw.polygon([(cx - size, cy - r), (cx + size, cy - r), (cx, cy + size)], fill=1)
+        draw.polygon([(cx - size, cy - r), (cx + size, cy - r), (cx, cy + size)], fill=255)
