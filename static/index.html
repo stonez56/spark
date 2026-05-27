@@ -585,6 +585,13 @@
                 <button id="btn-pet" onclick="petMimo()" class="dash-btn">🐾 擼貓摸摸</button>
             </div>
 
+            <!-- Middle: Volume Control -->
+            <div class="dash-section temp-control">
+                <span>🔊 音量:</span>
+                <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="0.8" oninput="updateVolume(this.value)" style="width:100px;">
+                <span id="volume-display" style="font-weight:700; color:#ff7ebb; min-width:35px; text-align:right;">80%</span>
+            </div>
+
             <!-- Right: Temperature Simulation -->
             <div class="dash-section temp-control">
                 <span>🌡️ 體溫模擬:</span>
@@ -607,15 +614,67 @@
         let ws;
         let micStarted = false;  // guard against starting mic twice
 
+        // Pre-load audio sound effects
+        const sndCute1 = new Audio('/static/sound/meow_cute-1.mp3');
+        const sndCute2 = new Audio('/static/sound/meow_cute-2.mp3');
+        const sndAnnoyed = new Audio('/static/sound/meow_annoyed.mp3');
+        const sndMeow1 = new Audio('/static/sound/meow-meow-1.mp3');
+        const sndMeow2 = new Audio('/static/sound/meow-meow-2.mp3');
+        const sndPurr = new Audio('/static/sound/purr.mp3');
+        sndPurr.loop = true; // Looping purr
+        
+        let masterVolume = 0.8;
+        let gainNode = null;
+
+        function updateVolume(val) {
+            masterVolume = parseFloat(val);
+            const display = document.getElementById('volume-display');
+            if (display) {
+                display.innerText = `${Math.round(masterVolume * 100)}%`;
+            }
+            
+            // Adjust volume of native sound effects
+            sndCute1.volume = masterVolume;
+            sndCute2.volume = masterVolume;
+            sndAnnoyed.volume = masterVolume;
+            sndMeow1.volume = masterVolume;
+            sndMeow2.volume = masterVolume;
+            sndPurr.volume = masterVolume * 0.35; // Purr should be soft and ambient
+            
+            if (gainNode) {
+                gainNode.gain.value = masterVolume;
+            }
+        }
 
         // Current playback source so we can stop it
         let currentSource = null;
         let playbackContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
 
         // ── Interactive Dashboard Functions ──
+        let localPetCount = 0;
+        let lastLocalPetTime = 0;
+
         function petMimo() {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({ type: 'pet_cat' }));
+            }
+            
+            const now = Date.now();
+            if (now - lastLocalPetTime < 8000) {
+                localPetCount++;
+            } else {
+                localPetCount = 1;
+            }
+            lastLocalPetTime = now;
+            
+            // Play interactive sounds locally with 0ms latency!
+            if (localPetCount >= 3) {
+                sndAnnoyed.currentTime = 0;
+                sndAnnoyed.play().catch(e => {});
+            } else {
+                const snd = Math.random() < 0.5 ? sndCute1 : sndCute2;
+                snd.currentTime = 0;
+                snd.play().catch(e => {});
             }
         }
 
@@ -630,6 +689,14 @@
             }
         }
 
+        let thinkingStart = null;
+        let lastLatency = null;
+
+        function getFormattedTime() {
+            const now = new Date();
+            return now.toTimeString().split(' ')[0]; // HH:MM:SS
+        }
+
         // ── WebSocket ──────────────────────────────
         function connectWebSocket() {
             ws = new WebSocket(`ws://${window.location.host}/ws`);
@@ -640,6 +707,15 @@
                     const msg = JSON.parse(event.data);
                     if (msg.type === "state") {
                         const s = msg.value;
+                        if (s === "Thinking") {
+                            thinkingStart = Date.now();
+                        } else if (s === "Speaking" && thinkingStart) {
+                            lastLatency = ((Date.now() - thinkingStart) / 1000).toFixed(2);
+                            thinkingStart = null;
+                        }
+                        
+                        // No looping purr sound to prevent background noise during speech
+                        
                         if (s === "Loading") {
                             document.getElementById('mimo-loader').style.display = 'flex';
                             document.getElementById('mimo-loader').style.opacity = '1';
@@ -654,7 +730,9 @@
                         stateLabel.innerText = s;
                         escHint.classList.toggle('active', s === 'Speaking');
                     } else if (msg.type === "transcript") {
-                        updateTranscript(msg.user, msg.spark);
+                        let latencyVal = lastLatency;
+                        lastLatency = null;
+                        updateTranscript(msg.user, msg.spark, latencyVal);
                     } else if (msg.type === "model_info") {
                         updateModelBadge(msg.mode, msg.model);
                     }
@@ -679,7 +757,15 @@
             if (currentSource) { try { currentSource.stop(); } catch (e) { } }
             currentSource = playbackContext.createBufferSource();
             currentSource.buffer = audioBuffer;
-            currentSource.connect(playbackContext.destination);
+            
+            // Connect to gainNode for real-time master volume control
+            if (!gainNode) {
+                gainNode = playbackContext.createGain();
+            }
+            gainNode.gain.value = masterVolume;
+            
+            currentSource.connect(gainNode);
+            gainNode.connect(playbackContext.destination);
             currentSource.start();
         }
 
@@ -703,11 +789,37 @@
         }
 
         // ── Transcript Update ─────────────────────
-        function updateTranscript(userText, sparkText) {
-            transcriptRow.innerHTML = `
-                <div class="transcript-user"><span>You:</span> ${escapeHtml(userText)}</div>
-                <div class="transcript-spark"><span>Mimo:</span> ${escapeHtml(sparkText)}</div>
+        function updateTranscript(userText, sparkText, latency) {
+            const timeStr = getFormattedTime();
+            const latencyStr = latency ? `<span style="color:#00ffff; font-size:12px; font-weight:normal; margin-left:10px;">⏱️ Latency: ${latency}s</span>` : '';
+            
+            const panel = document.getElementById('transcript-panel');
+            
+            // If the initial placeholder is there, clear it first
+            if (panel.innerText.trim() === 'You: —\nMimo: —' || panel.innerText.includes('You: —')) {
+                panel.innerHTML = '';
+            }
+            
+            const row = document.createElement('div');
+            row.className = 'transcript-row';
+            row.style.marginBottom = '12px';
+            row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+            row.style.paddingBottom = '8px';
+            
+            row.innerHTML = `
+                <div class="transcript-user" style="font-size:13px; color:#888;">
+                    <span style="color:rgba(0, 255, 255, 0.7); font-weight:600;">You</span> 
+                    <span style="font-size:11px; color:#555; margin-left:6px;">[${timeStr}]</span>: 
+                    ${escapeHtml(userText)}
+                </div>
+                <div class="transcript-spark" style="font-size:15px; color:#ddd; margin-top:4px;">
+                    <span style="color:#ff7ebb; font-weight:600;">Mimo</span> 
+                    <span style="font-size:11px; color:#555; margin-left:6px;">[${timeStr}]</span>${latencyStr}: 
+                    ${escapeHtml(sparkText)}
+                </div>
             `;
+            panel.appendChild(row);
+            panel.scrollTop = panel.scrollHeight;
         }
 
         function escapeHtml(str) {
@@ -729,6 +841,9 @@
             try {
                 const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 micStarted = true;
+                const welcomeSnd = Math.random() < 0.5 ? sndMeow1 : sndMeow2;
+                welcomeSnd.currentTime = 0;
+                welcomeSnd.play().catch(e => {});
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
                 const source = audioCtx.createMediaStreamSource(mediaStream);
                 const processor = audioCtx.createScriptProcessor(2048, 1, 1);

@@ -8,7 +8,8 @@ def get_timestamp() -> str:
 from config import (
     LLM_MODE,
     LOCAL_TEXT_MODEL, LOCAL_VISION_MODEL,
-    GEMINI_API_KEY, CLOUD_TEXT_MODEL, CLOUD_VISION_MODEL
+    OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
+    CLOUD_TEXT_MODEL, CLOUD_VISION_MODEL
 )
 # A lightweight, ultra-fast post-processing guardrail for common Simplified Chinese characters
 S2T_DICT = {
@@ -86,6 +87,10 @@ def filter_degenerative_repetition(text: str) -> str:
 class OllamaBrain:
     def __init__(self):
         self.mode = LLM_MODE
+        import settings_manager
+        settings = settings_manager.load_settings()
+        self.routing_mode = settings.get("routing_mode", "local")
+        
         # ── Daily API call counter ──
         self._call_date = date.today()
         self._call_count = 0
@@ -105,12 +110,25 @@ class OllamaBrain:
         self.warmup()
 
     def _init_cloud_client(self):
-        """Initialize OpenAI-compatible client pointing at Google Gemini API."""
+        """Initialize OpenAI client pointing at OpenRouter."""
         from openai import OpenAI
         self._cloud_client = OpenAI(
-            api_key=GEMINI_API_KEY,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            api_key=OPENROUTER_API_KEY,
+            base_url=OPENROUTER_BASE_URL
         )
+
+    def set_mode(self, mode: str):
+        """Switch between 'local' and 'cloud' LLM mode at runtime."""
+        if mode in ["local", "cloud"]:
+            self.mode = mode
+            if mode == "cloud":
+                from config import CLOUD_TEXT_MODEL
+                self.text_model = CLOUD_TEXT_MODEL
+                self._init_cloud_client()
+            else:
+                from config import LOCAL_TEXT_MODEL
+                self.text_model = LOCAL_TEXT_MODEL
+            print(f"[Brain Mode] Swapped to {self.mode.upper()} | Model: {self.text_model}")
 
     def _track_call(self, label: str = ""):
         """Increment and display the daily API call counter."""
@@ -122,17 +140,21 @@ class OllamaBrain:
         remaining = self.DAILY_LIMIT - self._call_count
         bar = "█" * min(self._call_count, 20) + "░" * max(0, 20 - self._call_count)
         status = "⚠️ LOW" if remaining <= 10 else "OK"
-        print(f"  ╔═ Gemini API [{label}] call #{self._call_count}/{self.DAILY_LIMIT} | remaining: {remaining} | {status}")
+        print(f"  ╔═ OpenRouter API [{label}] call #{self._call_count}/{self.DAILY_LIMIT} | remaining: {remaining} | {status}")
         print(f"  ║  [{bar}]")
         if remaining <= 0:
             print(f"  ╚═ ⛔ Daily limit reached! Switch to Local mode.")
 
-    def _cloud_chat(self, messages: list) -> str:
-        """Send a chat request to Google Gemini API and return the content string.
+    def _cloud_chat(self, messages: list, reasoning_effort: str = None) -> str:
+        """Send a chat request to OpenRouter API and return the content string.
         Snappily falls back to local Ollama immediately if rate-limited (429), not found (404),
         or if any cloud call fails, avoiding slow retry loops."""
         primary_model = self.text_model
         last_error = None
+
+        extra_body = {}
+        if reasoning_effort:
+            extra_body["reasoning"] = {"effort": reasoning_effort}
 
         try:
             self._track_call(label=primary_model)
@@ -140,12 +162,13 @@ class OllamaBrain:
                 model=primary_model,
                 messages=messages,
                 temperature=0.3,
-                timeout=6.0  # Strict timeout to prevent client thread from freezing
+                timeout=12.0 if reasoning_effort == "high" else 6.0,  # Strict timeout
+                extra_body=extra_body
             )
             return response.choices[0].message.content.strip()
         except Exception as e:
             err_str = str(e)
-            print(f"⚠️ [Gemini API] Model {primary_model} failed: {err_str}")
+            print(f"⚠️ [OpenRouter API] Model {primary_model} failed: {err_str}")
             last_error = e
 
             # Handle models rejecting system role by merging (400 Bad Request)
@@ -166,29 +189,34 @@ class OllamaBrain:
                         model=primary_model,
                         messages=user_parts,
                         temperature=0.3,
-                        timeout=6.0
+                        timeout=12.0 if reasoning_effort == "high" else 6.0,
+                        extra_body=extra_body
                     )
                     return response.choices[0].message.content.strip()
                 except Exception as inner_e:
-                    print(f"⚠️ [Gemini API] Merged-role request for {primary_model} also failed: {inner_e}")
+                    print(f"⚠️ [OpenRouter API] Merged-role request for {primary_model} also failed: {inner_e}")
                     last_error = inner_e
 
         # Ultimate instant fallback to local model - extremely fast and snappy!
-        print("🚨 [Gemini API] Cloud model failed or rate-limited. Falling back to local Ollama model immediately...")
+        print("🚨 [OpenRouter API] Cloud model failed or rate-limited. Falling back to local Ollama model immediately...")
         try:
             system_prompt = next((m["content"] for m in messages if m["role"] == "system"), "")
             user_prompt = next((m["content"] for m in messages if m["role"] == "user"), "")
             
             merged_prompt = f"{system_prompt}\n\nUser Input: {user_prompt}" if system_prompt else user_prompt
-            return self._local_generate(merged_prompt)
+            return self._local_generate(merged_prompt, model=LOCAL_TEXT_MODEL)
         except Exception as local_err:
             print(f"🚨 [Ollama] Local fallback also failed: {local_err}")
             raise last_error if last_error else local_err
 
-    def _local_generate(self, prompt: str, options: dict = None, **kwargs) -> str:
+    def _local_generate(self, prompt: str, model: str = None, options: dict = None, **kwargs) -> str:
         """Send a generate request to local Ollama using chat API with minimal parameters."""
+        target_model = model if model else self.text_model
+        if target_model == CLOUD_TEXT_MODEL:
+            target_model = LOCAL_TEXT_MODEL
+        
         response = ollama.chat(
-            model=self.text_model,
+            model=target_model,
             messages=[{'role': 'user', 'content': prompt}]
         )
         return response['message']['content'].strip()
@@ -196,7 +224,7 @@ class OllamaBrain:
 
     def warmup(self):
         if self.mode == "cloud":
-            print(f"[Cloud Mode] No warmup needed — using Gemini API.")
+            print(f"[Cloud Mode] No warmup needed — using OpenRouter API.")
             return
         print(f"Warming up text model '{self.text_model}' and vision model '{self.vision_model}'...")
         try:
@@ -214,47 +242,29 @@ class OllamaBrain:
 
     def analyze_image(self, image_path: str, prompt="Describe this image in detail"):
         """
-        Cloud mode: sends image to Gemini vision model (gemini-2.5-flash).
-        Local mode: uses local moondream via Ollama.
+        Always uses local moondream via Ollama, as specified by the user:
+        "Vision model still keep the local moondream LLM for now."
         """
-        print(f"Analyzing image {image_path} with {self.vision_model} [{self.mode}]...")
+        print(f"Analyzing image {image_path} with local moondream via Ollama...")
         try:
             from PIL import Image
             import io
 
-            # Resize to reduce payload size in both modes
+            # Resize to reduce payload size
             with Image.open(image_path) as img:
                 img.thumbnail((800, 800))
                 img_byte_arr = io.BytesIO()
                 img.save(img_byte_arr, format='JPEG', quality=85)
                 img_bytes = img_byte_arr.getvalue()
 
-            if self.mode == "cloud":
-                import base64
-                # Encode image as base64 for Gemini multimodal API
-                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
-                messages = [{
-                    "role": "user",
-                    "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
-                        {"type": "text", "text": prompt}
-                    ]
-                }]
-                self._track_call(label=self.vision_model)
-                response = self._cloud_client.chat.completions.create(
-                    model=self.vision_model,
-                    messages=messages,
-                )
-                result = response.choices[0].message.content.strip()
-            else:
-                response = ollama.generate(
-                    model=self.vision_model,
-                    prompt=prompt,
-                    images=[img_bytes],
-                    keep_alive=-1,
-                    options={"num_ctx": 1024, "num_predict": 128}
-                )
-                result = response['response'].strip()
+            response = ollama.generate(
+                model=LOCAL_VISION_MODEL,
+                prompt=prompt,
+                images=[img_bytes],
+                keep_alive=-1,
+                options={"num_ctx": 1024, "num_predict": 128}
+            )
+            result = response['response'].strip()
 
             print(f"Vision analysis raw result: {result!r}")
             if not result:
@@ -270,15 +280,14 @@ class OllamaBrain:
             return text  # moondream already outputs English
 
         prompt = (
-            "Translate the following text STRICTLY to Traditional Chinese (台灣繁體中文). "
-            "Absolutely NO Simplified Chinese characters are allowed (e.g. use 體 instead of 体, 會 instead of 会, 國 instead of 国, 臺/台 instead of 台, 綠 instead of 绿).\n"
-            "Output ONLY the translated text in Traditional Chinese, nothing else.\n\n"
-            f"Text: {text}\n"
-            "Translation:"
+            "請將以下英文句子翻譯成優美的台灣繁體中文，保持貓咪般親切口吻。\n"
+            "規定：只輸出翻譯好的繁體中文，不要輸出任何英文原文或額外解釋。\n\n"
+            f"英文：{text}\n"
+            "繁體中文翻譯："
         )
         try:
             if self.mode == "cloud":
-                result = self._cloud_chat([{"role": "user", "content": prompt}])
+                result = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high")
             else:
                 result = self._local_generate(prompt, options={"num_predict": 200})
             cleaned_result = clean_traditional_chinese(result)
@@ -312,7 +321,7 @@ class OllamaBrain:
                 f"Results:\n{search_context}"
             )
             if self.mode == "cloud":
-                res = self._cloud_chat([{"role": "user", "content": prompt}])
+                res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high")
             else:
                 res = self._local_generate(prompt)
             return clean_traditional_chinese(res)
@@ -336,10 +345,20 @@ class OllamaBrain:
             return "health_query"
         if any(w in user_input_lower for w in ["體溫", "溫度", "發燒", "量溫度"]):
             return "temp_analysis"
-        if any(w in user_input_lower for w in ["拍", "看", "這是什麼", "照片"]):
+        if any(w in user_input_lower for w in ["這是什麼", "这是什么", "拍張照", "拍张照", "照張相", "照张相", "看這裡", "看这里", "看這", "看这", "拍照片", "拍個照", "拍个照", "照片", "相片"]):
             return "take_photo"
-        if any(w in user_input_lower for w in ["切換", "模型", "聰明一點", "換一個"]):
+        if any(w in user_input_lower for w in ["切換模型", "切換大腦", "換大腦", "換模型", "變聰明一點", "換個大腦", "換個模型"]):
             return "swap_model"
+        
+        # --- Phase 1.5: Date & Time Interceptor ---
+        normalized_input = clean_traditional_chinese(user_input_lower)
+        if ("星期" in normalized_input or "禮拜" in normalized_input) and ("幾" in normalized_input or "几" in user_input_lower):
+            return "datetime"
+        if "幾點" in normalized_input or "現在時間" in normalized_input or "現在的時間" in normalized_input:
+            return "datetime"
+        if "幾號" in normalized_input or "今天日期" in normalized_input or "幾月幾" in normalized_input or "今天幾月" in normalized_input or "今天幾號" in normalized_input or "幾月幾號" in normalized_input:
+            return "datetime"
+            
         if any(w in user_input_lower for w in ["天氣", "股票", "股市", "新聞", "匯率", "台積電"]) and not any(w in user_input_lower for w in ["幾點", "星期", "幾號"]):
             return "search_web"
         if any(w in user_input_lower for w in ["散步", "起床", "睡醒", "睡覺"]):
@@ -358,14 +377,18 @@ class OllamaBrain:
 Actions: chat, take_photo, search_web, swap_model, emergency, health_query, daily_checkin, reminiscence, praise_affirmation, emotional_support, pet_cat, temp_analysis.
 Output no other text."""
         
-        if self.mode == "cloud":
+        import settings_manager
+        settings = settings_manager.load_settings()
+        self.routing_mode = settings.get("routing_mode", "local")
+        
+        if self.routing_mode == "cloud":
             print("Using Cloud LLM for intent routing...")
             try:
                 messages = [
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_input}
                 ]
-                content = self._cloud_chat(messages)
+                content = self._cloud_chat(messages, reasoning_effort="high")
                 import json
                 if "```json" in content:
                     content = content.split("```json")[1].split("```")[0].strip()
@@ -431,7 +454,7 @@ Output no other text."""
         import settings_manager
         settings = settings_manager.load_settings()
         caregiver_name = settings.get("caregiver_name", "Mimo")
-        patient_name = settings.get("patient_name", "奴才")
+        patient_name = settings.get("patient_name", "主人")
 
         # ── 1. 快速日期與時間系統回覆機制 (0ms 延遲本地生成) ──
         normalized_prompt = clean_traditional_chinese(prompt)
@@ -516,8 +539,17 @@ Output no other text."""
                 messages = [{"role": "system", "content": system_content}]
                 if context_history:
                     messages.append({"role": "assistant", "content": f"Context: {context_history}"})
-                messages.append({"role": "user", "content": prompt})
-                res = self._cloud_chat(messages)  # 徹底不傳 max_tokens
+                
+                # Dialogue task vs. Logic/knowledge task distinction
+                if is_knowledge_query:
+                    reasoning_effort = "high"
+                    messages.append({"role": "user", "content": prompt})
+                else:
+                    reasoning_effort = "low"
+                    short_prompt = f"{prompt}\n(極簡答：請以傲嬌貓咪口氣直接回覆，嚴禁冗長思考與推導。)"
+                    messages.append({"role": "user", "content": short_prompt})
+                
+                res = self._cloud_chat(messages, reasoning_effort=reasoning_effort)
             else:
                 full_prompt = f"{system_content}\n\nUser: {prompt}"
                 if context_history:

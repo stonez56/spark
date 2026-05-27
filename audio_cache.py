@@ -136,14 +136,19 @@ def initialize(tts):
     when the name changes. Static filler files are always preserved and reused.
     """
     global _CACHE, _PURR_PAD
-    if '_PURR_PAD' not in globals():
-        _PURR_PAD = b''
-    if not _PURR_PAD:
+    purr_fpath = os.path.join(CACHE_DIR, "purr_pad.pcm")
+    if os.path.exists(purr_fpath):
+        print("[AudioCache] Loaded cached purring sound effect (呼嚕聲) from disk.")
+        with open(purr_fpath, "rb") as f:
+            _PURR_PAD = f.read()
+    else:
         print("[AudioCache] Generating purring sound effect (呼嚕聲)...")
         _PURR_PAD = tts.synthesize("呼嚕呼嚕... 呼嚕呼嚕... 呼嚕呼嚕... 呼嚕呼嚕...")
+        with open(purr_fpath, "wb") as f:
+            f.write(_PURR_PAD)
         
     settings     = settings_manager.load_settings()
-    patient_name = settings.get("patient_name", "奴才")
+    patient_name = settings.get("patient_name", "主人")
     fillers      = get_fillers(patient_name)
     meta         = _load_meta()
     old_name     = meta.get("patient_name", "")

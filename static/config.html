@@ -184,10 +184,25 @@
 
     <!-- Mode Settings -->
     <div class="panel">
-        <h2>🤖 核心模式切換 (Mode)</h2>
+        <h2>🤖 大腦對話模式 (Dialogue Mode)</h2>
+        <p style="font-size: 13px; color: #888; margin-bottom: 12px; line-height: 1.4;">
+            主宰貓咪平常聊天時的聰明度。使用雲端大腦能讓本喵更有同理心、更會傲嬌安慰主人喔！
+        </p>
         <div class="mode-buttons">
             <button class="mode-btn active-local" id="btn-local" onclick="setMode('local')">⚡ Local 邊緣運算</button>
             <button class="mode-btn" id="btn-cloud" onclick="setMode('cloud')">☁ Cloud 雲端大模型</button>
+        </div>
+    </div>
+
+    <!-- Intent Routing Mode Settings -->
+    <div class="panel">
+        <h2>🧭 意圖辨識模式 (Intent Routing Mode)</h2>
+        <p style="font-size: 13px; color: #888; margin-bottom: 12px; line-height: 1.4;">
+            主宰貓咪理解主人指令（如上網查詢、拍照分析等）時的判斷方式。建議選擇 ⚡ Local 邊緣運算，能省下雲端 API 額度並使反應更為敏捷喵！
+        </p>
+        <div class="mode-buttons">
+            <button class="mode-btn active-local" id="btn-routing-local" onclick="setRoutingMode('local')">⚡ Local 邊緣運算</button>
+            <button class="mode-btn" id="btn-routing-cloud" onclick="setRoutingMode('cloud')">☁ Cloud 雲端大模型</button>
         </div>
     </div>
 
@@ -195,8 +210,8 @@
     <div class="panel">
         <h2>👤 稱呼設定 (Personalization)</h2>
         <div class="form-group">
-            <label>您的稱呼 (預設: 奴才)</label>
-            <input type="text" id="patient-name" placeholder="例如: 恩霖, 阿公, 主人">
+            <label>您的稱呼 (預設: 主人)</label>
+            <input type="text" id="patient-name" placeholder="例如: 恩霖, 主人">
         </div>
         <div class="form-group">
             <label>貓咪助理稱呼 (預設: Mimo)</label>
@@ -305,6 +320,34 @@
     }
 
     // --- Settings Logic ---
+    let currentRoutingMode = 'local';
+
+    function updateRoutingModeButtons(mode) {
+        currentRoutingMode = mode;
+        document.getElementById('btn-routing-local').className = 'mode-btn' + (mode === 'local' ? ' active-local' : '');
+        document.getElementById('btn-routing-cloud').className = 'mode-btn' + (mode === 'cloud' ? ' active-cloud' : '');
+    }
+
+    async function setRoutingMode(mode) {
+        updateRoutingModeButtons(mode);
+        try {
+            const patient = document.getElementById('patient-name').value;
+            const caregiver = document.getElementById('caregiver-name').value;
+            const speed = document.getElementById('speaking-speed').value;
+            
+            await fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    patient_name: patient,
+                    caregiver_name: caregiver,
+                    speaking_speed: speed,
+                    routing_mode: mode
+                })
+            });
+        } catch(e) { console.error(e); }
+    }
+
     async function loadSettings() {
         try {
             const res = await fetch('/api/settings');
@@ -312,6 +355,7 @@
             document.getElementById('patient-name').value = data.patient_name || '';
             document.getElementById('caregiver-name').value = data.caregiver_name || '';
             document.getElementById('speaking-speed').value = data.speaking_speed || 'normal';
+            updateRoutingModeButtons(data.routing_mode || 'local');
         } catch(e) { console.error(e); }
     }
     async function saveSettings() {
@@ -334,7 +378,12 @@
             await fetch('/api/settings', {
                 method: 'POST',
                 headers:{'Content-Type': 'application/json'},
-                body: JSON.stringify({patient_name: patient, caregiver_name: caregiver, speaking_speed: speed})
+                body: JSON.stringify({
+                    patient_name: patient,
+                    caregiver_name: caregiver,
+                    speaking_speed: speed,
+                    routing_mode: currentRoutingMode
+                })
             });
             await new Promise(r => setTimeout(r, 5000));
             msg.style.color = '#00ffff';

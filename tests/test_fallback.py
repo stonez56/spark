@@ -54,7 +54,7 @@ def run_refinement_test():
         word_count = len(response)
         print(f"📏 回應字數: {word_count} 字")
         if word_count > 30:
-            print("✅ 成功！Mimo 已經成功突破 20 字極限，給予了奴才高質量的完整解釋！")
+            print("✅ 成功！Mimo 已經成功突破 20 字極限，給予了主人高質量的完整解釋！")
         else:
             print("❌ 失敗：字數依然過短，請確認 length_instruction 是否生效。")
             

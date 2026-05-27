@@ -4,9 +4,10 @@ import os
 SETTINGS_FILE = 'settings.json'
 
 DEFAULT_SETTINGS = {
-    "patient_name": "奴才",
+    "patient_name": "主人",
     "caregiver_name": "Mimo",
-    "speaking_speed": "normal"
+    "speaking_speed": "normal",
+    "routing_mode": "local"
 }
 
 def load_settings():

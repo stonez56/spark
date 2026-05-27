@@ -149,6 +149,9 @@ async def update_settings(payload: dict):
     if "speaking_speed" in payload:
         settings["speaking_speed"] = payload["speaking_speed"]
         
+    if "routing_mode" in payload:
+        settings["routing_mode"] = payload["routing_mode"]
+        
     settings_manager.save_settings(settings)
     
     if need_regenerate and hasattr(app.state, 'command_queue'):

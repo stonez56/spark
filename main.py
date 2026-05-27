@@ -52,6 +52,8 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
     # Report initial mode/model to UI
     _report_mode(state_queue, brain)
     active_silence_timeout = 1.8  # 預設自適應靜音斷句超時時間
+    consecutive_pets = 0
+    last_pet_time = 0.0
     
     # Initialize OLED and Camera controllers
     oled_ctrl = OLEDController(sm)
@@ -72,17 +74,8 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
         if not mode_queue.empty():
             new_mode = mode_queue.get()
             if new_mode != brain.mode:
-                brain.mode = new_mode
-                if new_mode == "cloud":
-                    from config import CLOUD_TEXT_MODEL
-                    brain.text_model = CLOUD_TEXT_MODEL
-                    brain._init_cloud_client()
-                else:
-                    from config import LOCAL_TEXT_MODEL
-                    brain.text_model = LOCAL_TEXT_MODEL
-                    brain.mode = "local"
+                brain.set_mode(new_mode)
                 _report_mode(state_queue, brain)
-                print(f"[Mode Switch] → {brain.mode.upper()} | Model: {brain.text_model}")
 
         state = sm.get_state()
 
@@ -136,37 +129,73 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 state_queue.put(SparkState.ATTENTIVE)
                 
                 import settings_manager
-                patient_name = settings_manager.load_settings().get("patient_name", "奴才")
+                patient_name = settings_manager.load_settings().get("patient_name", "主人")
                 
-                import audio_cache
-                filler_bytes = audio_cache.get_random_filler("pet_cat")
-                if filler_bytes:
-                    tts_queue.put(filler_bytes)
+                # Track consecutive petting within 8 seconds
+                now_time = time.time()
+                if now_time - last_pet_time < 8.0:
+                    consecutive_pets += 1
+                else:
+                    consecutive_pets = 1
+                last_pet_time = now_time
+                print(f"[Pet Logic] Consecutive pets: {consecutive_pets}")
                 
-                prompt = f"(系統提示：{patient_name}剛剛摸了你的頭，你感到非常舒服，請以傲嬌、被治癒的貓咪口吻對{patient_name}說幾句話，句尾加上喵～，長度在20字以內。)"
-                response = brain.generate_response(prompt, f"{patient_name}摸摸你的頭")
-                transcript_queue.put(("[擼貓摸摸]", response))
+                # Save token costs:
+                # If continuous (>= 3 times), always call LLM to complain/炸毛.
+                # Else (1st or 2nd time), 30% chance to call LLM, 70% chance of a pure local meow reaction.
+                import random
+                use_llm = False
+                if consecutive_pets >= 3:
+                    use_llm = True
+                else:
+                    use_llm = (random.random() < 0.3)
                 
-                time.sleep(1.5)
-                
-                sm.transition(SparkState.SPEAKING)
-                state_queue.put(SparkState.SPEAKING)
-                stop_audio_flag.clear()
-                
-                audio_output = tts.synthesize(response)
-                tts_queue.put(audio_output)
-                
-                audio_duration = len(audio_output) / (22050 * 2)
-                elapsed = 0
-                step = 0.05
-                while elapsed < audio_duration:
-                    if stop_audio_flag.is_set():
-                        break
-                    time.sleep(step)
-                    elapsed += step
-                
-                sm.transition(SparkState.IDLE)
-                state_queue.put(SparkState.IDLE)
+                if use_llm:
+                    # Spoken LLM response branch (no generic thinking filler to avoid overlap)
+                    if consecutive_pets >= 3:
+                        prompt = f"(系統提示：{patient_name}已經連續摸了你{consecutive_pets}次頭，你開始覺得有點太熱了、害羞炸毛。請以非常傲嬌、嘴硬生氣但其實很喜歡主人摸的口吻對{patient_name}說幾句話，句尾加上喵～，長度在20字以內。)"
+                    else:
+                        prompt = f"(系統提示：{patient_name}剛剛摸了你的頭，你感到非常舒服，請以傲嬌、被治癒的貓咪口吻對{patient_name}說幾句話，句尾加上喵～，長度在20字以內。)"
+                    
+                    response = brain.generate_response(prompt, f"{patient_name}摸摸你的頭")
+                    
+                    transcript_queue.put(("[擼貓摸摸]", response))
+                    
+                    sm.transition(SparkState.SPEAKING)
+                    state_queue.put(SparkState.SPEAKING)
+                    stop_audio_flag.clear()
+                    
+                    audio_output = tts.synthesize(response)
+                    tts_queue.put(audio_output)
+                    
+                    audio_duration = len(audio_output) / (22050 * 2)
+                    elapsed = 0
+                    step = 0.05
+                    while elapsed < audio_duration:
+                        if stop_audio_flag.is_set():
+                            break
+                        time.sleep(step)
+                        elapsed += step
+                    
+                    sm.transition(SparkState.IDLE)
+                    state_queue.put(SparkState.IDLE)
+                else:
+                    # Pure local meow reaction branch (no TTS voice synthesis to avoid overlap)
+                    static_responses = [
+                        "（瞇起眼睛享受摸摸喵～）",
+                        "（滿意地發出呼嚕聲，特准你再摸一下喵）",
+                        "呼嚕呼嚕...喵～",
+                        "哼，本喵才沒有被你治癒呢喵！",
+                        "喵嗚～（傲嬌地甩甩尾巴）",
+                    ]
+                    response = random.choice(static_responses)
+                    transcript_queue.put(("[擼貓摸摸]", response))
+                    
+                    # Stay in ATTENTIVE/PETTING state for 1.5 seconds to feel physical
+                    time.sleep(1.5)
+                    
+                    sm.transition(SparkState.IDLE)
+                    state_queue.put(SparkState.IDLE)
                 continue
             elif cmd['type'] == 'temp_measure':
                 temp_val = cmd['value']
@@ -175,7 +204,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 state_queue.put(SparkState.THINKING)
                 
                 import settings_manager
-                patient_name = settings_manager.load_settings().get("patient_name", "奴才")
+                patient_name = settings_manager.load_settings().get("patient_name", "主人")
                 
                 import audio_cache
                 filler_bytes = audio_cache.get_random_filler("temp_analysis")
@@ -217,7 +246,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 state_queue.put(SparkState.ATTENTIVE)
                 
                 import settings_manager
-                patient_name = settings_manager.load_settings().get("patient_name", "奴才")
+                patient_name = settings_manager.load_settings().get("patient_name", "主人")
                 
                 import audio_cache
                 ack_audio = audio_cache.get_random_filler("wake_word_ack")
@@ -332,27 +361,45 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                     transcription = stt.transcribe(full_audio)
                     print(f"[{get_timestamp()}] User: {transcription}")
 
+                    import re
+                    cleaned_text = ""
+                    if transcription:
+                        cleaned_text = re.sub(r'[^\w\u4e00-\u9fff]', '', transcription).strip()
+
+                    if not cleaned_text:
+                        print(f"[{get_timestamp()}] [System] No meaningful speech detected (only silence or punctuation). Returning to Idle.")
+                        while not audio_queue.empty():
+                            try:
+                                audio_queue.get_nowait()
+                            except:
+                                break
+                        sm.transition(SparkState.IDLE)
+                        state_queue.put(SparkState.IDLE)
+                        stt_buffer = []
+                        has_spoken = False
+                        continue
+
+                    # Play generic thinking filler immediately at 0ms to hide routing/LLM generation latency
+                    import audio_cache
+                    filler_bytes = audio_cache.get_random_filler("chat")
+                    if filler_bytes:
+                        tts_queue.put(filler_bytes)
+
                     response = "..."
                     if transcription:
                         action = brain.route_intent(transcription)
                         print(f"[{get_timestamp()}] Decided action: {action}")
-                        
-                        import audio_cache
-                        filler_bytes = audio_cache.get_random_filler(action)
-                        if filler_bytes:
-                            # Play filler audio immediately
-                            tts_queue.put(filler_bytes)
 
-                        if action in ["chat", "health_query", "daily_checkin", "reminiscence", "praise_affirmation", "emotional_support"]:
+                        if action in ["chat", "health_query", "daily_checkin", "reminiscence", "praise_affirmation", "emotional_support", "datetime"]:
                             context = memory.retrieve_context(transcription)
                             intent_hint = ""
                             
                             # 載入個性化稱呼以配合 emotional_support
                             import settings_manager
-                            patient_name = settings_manager.load_settings().get("patient_name", "奴才")
+                            patient_name = settings_manager.load_settings().get("patient_name", "主人")
                             
-                            if action == "reminiscence": intent_hint = "(提示：長輩正在回憶過去，請用傾聽和好奇的口吻引導他們多說一點。)"
-                            elif action == "praise_affirmation": intent_hint = "(提示：長輩需要肯定，請大力稱讚他們的行為！)"
+                            if action == "reminiscence": intent_hint = f"(提示：{patient_name}正在回憶過去，請用傾聽和好奇的口吻引導他/她多說一點。)"
+                            elif action == "praise_affirmation": intent_hint = f"(提示：{patient_name}需要肯定，請大力稱讚他/她的行為！)"
                             elif action == "emotional_support": intent_hint = (
                                 f"(提示：{patient_name}現在心情不好、感到寂寞或難過，請為他生成一段無比輕鬆、自然且溫暖的擬貓語安慰文字。\n"
                                 f"【結構要求】必須嚴格分為四段，每段一小句，且總體字數在60字以內：\n"
@@ -360,9 +407,9 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                                 f"2. 表達關心 (如：本喵注意到你心情不太好，別擔心)\n"
                                 f"3. 提出小建議 (如：或許喝點熱茶、吃點小點心會舒服些)\n"
                                 f"4. 收尾溫暖 (如：本喵會在旁邊陪著你，慢慢就會好起來喵～)\n"
-                                f"【核心約束】限制「喵～」在整段對話中只出現 1 到 2 次，避免過度重複撒嬌，語氣像一個充滿靈性的陪伴型貓咪機器人，簡單自然。禁止輸出任何 Markdown 符號或換行符。)"
+                                f"【核心約束】限制「喵～」在整段對話中只出現 1 到 2 次，避免過度重複撒嬌，語氣像一個充滿靈性的陪伴型貓咪機器人，簡單自然。禁止輸出 any Markdown 符號或換行符。)"
                             )
-                            elif action == "health_query": intent_hint = "(提示：長輩在詢問健康或回報數據，請關心他們，但絕對不要給醫療診斷。)"
+                            elif action == "health_query": intent_hint = f"(提示：{patient_name}在詢問健康或回報數據，請關心他/她，但絕對不要給醫療診斷。)"
                             
                             augmented_prompt = transcription
                             if intent_hint:
@@ -372,7 +419,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                             memory.add_interaction(transcription, response)
                         elif action == "emergency":
                             import settings_manager
-                            patient_name = settings_manager.load_settings().get("patient_name", "阿公")
+                            patient_name = settings_manager.load_settings().get("patient_name", "主人")
                             response = f"{patient_name}，這聽起來很危險，請您先坐著休息不要動，我立刻幫您通知家人！"
                             def handle_emergency():
                                 print(">>> [System] Line Notify: EMERGENCY TRIGGERED! Sending alert to family.")
