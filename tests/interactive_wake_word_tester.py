@@ -25,9 +25,14 @@ import uvicorn
 
 warnings.filterwarnings("ignore")
 
-WAKE_WORD  = sys.argv[1] if len(sys.argv) > 1 else "alexa"
+try:
+    from config import WAKE_WORD as CONFIG_WAKE_WORD
+except ImportError:
+    CONFIG_WAKE_WORD = "alexa"
+
+WAKE_WORD  = sys.argv[1] if len(sys.argv) > 1 else CONFIG_WAKE_WORD
 PORT       = 9999
-THRESHOLD  = 0.5
+THRESHOLD  = 0.4
 COOLDOWN   = 2.0   # seconds between detections
 
 app = FastAPI()
@@ -38,21 +43,28 @@ oww_model = None
 def get_model():
     global oww_model
     if oww_model is None:
+        import os
         import openwakeword
         from openwakeword.model import Model
         
-        all_paths = openwakeword.get_pretrained_model_paths()
-        paths = [p for p in all_paths if WAKE_WORD in p]
+        if WAKE_WORD.endswith(".onnx") and os.path.exists(WAKE_WORD):
+            print(f"Loading custom openWakeWord model from path: {WAKE_WORD}...", end="", flush=True)
+            oww_model = Model(wakeword_model_paths=[WAKE_WORD])
+            oww_model.predict(np.zeros(1280, dtype=np.int16))  # warmup
+            print(" ready!\n")
+        else:
+            all_paths = openwakeword.get_pretrained_model_paths()
+            paths = [p for p in all_paths if WAKE_WORD in p]
 
-        if not paths:
-            print(f"[ERROR] No model found for '{WAKE_WORD}'.")
-            print("Available models:", [p.split("/")[-1].replace(".onnx","") for p in all_paths])
-            sys.exit(1)
+            if not paths:
+                print(f"[ERROR] No model found for '{WAKE_WORD}'.")
+                print("Available models:", [p.split("/")[-1].replace(".onnx","") for p in all_paths])
+                sys.exit(1)
 
-        print(f"Loading model for '{WAKE_WORD}'...", end="", flush=True)
-        oww_model = Model(wakeword_model_paths=paths)
-        oww_model.predict(np.zeros(1280, dtype=np.int16))  # warmup
-        print(" ready!\n")
+            print(f"Loading model for '{WAKE_WORD}'...", end="", flush=True)
+            oww_model = Model(wakeword_model_paths=paths)
+            oww_model.predict(np.zeros(1280, dtype=np.int16))  # warmup
+            print(" ready!\n")
     return oww_model
 
 # ── HTML page served to browser ────────────────────────────────────────────────
@@ -139,27 +151,38 @@ async def ws_endpoint(websocket: WebSocket):
     model = get_model()
     await websocket.accept()
     print(f'Browser connected. Say "{WAKE_WORD}"...')
+    
+    CHUNK_BYTES = 2560
+    audio_buffer = bytearray()
+    
     try:
         while True:
             data = await websocket.receive_bytes()
-            audio = np.frombuffer(data, dtype=np.int16)
-            prediction = model.predict(audio)
+            audio_buffer.extend(data)
+            
+            while len(audio_buffer) >= CHUNK_BYTES:
+                chunk = audio_buffer[:CHUNK_BYTES]
+                del audio_buffer[:CHUNK_BYTES]
+                
+                audio = np.frombuffer(chunk, dtype=np.int16)
+                prediction = model.predict(audio)
 
-            for model_name, score in prediction.items():
-                now = time.time()
-                detected = (score >= THRESHOLD and (now - last_detected) > WAKE_WORD_COOLDOWN_SEC) if 'WAKE_WORD_COOLDOWN_SEC' in globals() else (score >= THRESHOLD and (now - last_detected) > COOLDOWN)
+                for model_name, score in prediction.items():
+                    now = time.time()
+                    detected = (score >= THRESHOLD and (now - last_detected) > WAKE_WORD_COOLDOWN_SEC) if 'WAKE_WORD_COOLDOWN_SEC' in globals() else (score >= THRESHOLD and (now - last_detected) > COOLDOWN)
 
-                if detected:
-                    detect_count += 1
-                    last_detected = now
-                    model.reset()
-                    print(f"✅ DETECTED! score={score:.3f}  (#{detect_count})", flush=True)
-                else:
-                    bar_len = int(score * 20)
-                    bar = "█" * bar_len + "░" * (20 - bar_len)
-                    print(f"\r  [{bar}] {score:.3f} ", end="", flush=True)
+                    if detected:
+                        detect_count += 1
+                        last_detected = now
+                        model.reset()
+                        audio_buffer.clear()
+                        print(f"✅ DETECTED! score={score:.3f}  (#{detect_count})", flush=True)
+                    else:
+                        bar_len = int(score * 20)
+                        bar = "█" * bar_len + "░" * (20 - bar_len)
+                        print(f"\r  [{bar}] {score:.3f} ", end="", flush=True)
 
-                await websocket.send_json({"score": round(float(score), 4), "detected": bool(detected)})
+                    await websocket.send_json({"score": round(float(score), 4), "detected": bool(detected)})
 
     except WebSocketDisconnect:
         print("\nBrowser disconnected.")

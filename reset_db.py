@@ -82,6 +82,29 @@ def reset_database():
     except Exception as e:
         print(f"❌ [Reset DB] Error resetting ChromaDB: {e}")
 
+    # 4. Reset Personalization Settings (settings.json) to defaults
+    try:
+        import settings_manager
+        default_settings = {
+            "patient_name": "主人",
+            "caregiver_name": "Mimo",
+            "speaking_speed": "normal",
+            "routing_mode": "local"
+        }
+        settings_manager.save_settings(default_settings)
+        print("✅ [Reset DB] Personalization settings (settings.json) reset to default clean values.")
+    except Exception as e:
+        print(f"❌ [Reset DB] Error resetting personalization settings: {e}")
+
+    # 5. Clear Audio Cache directory (guarantees complete clean name regeneration)
+    try:
+        cache_dir = "./audio_cache_data"
+        if os.path.exists(cache_dir):
+            shutil.rmtree(cache_dir, ignore_errors=True)
+            print("🗑️ [Reset DB] Audio cache directory cleared for clean fresh regeneration.")
+    except Exception as e:
+        print(f"❌ [Reset DB] Error clearing audio cache: {e}")
+
     print("🎉 [Reset DB] Database and memory reset completed!")
 
 if __name__ == "__main__":

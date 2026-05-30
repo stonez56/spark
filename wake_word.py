@@ -9,20 +9,28 @@ CHANNELS = 1
 RATE = 16000
 CHUNK = 1280 # 80 ms chunks
 
-def listen_for_wake_word(state_machine, state_queue, audio_queue, wake_word="alexa"):
+def listen_for_wake_word(state_machine, state_queue, audio_queue, wake_word=None):
     """
     Listens continuously on the audio_queue (from browser WebSocket) and transitions the state machine
     when the wake word is detected.
     """
+    import os
+    if wake_word is None:
+        from config import WAKE_WORD as wake_word
+
     print(f"\nLoading openWakeWord model for '{wake_word}'...")
     try:
         import openwakeword
-        paths = [p for p in openwakeword.get_pretrained_model_paths() if wake_word in p]
-        if not paths:
-            print(f"Could not find model for '{wake_word}'. Loading all default models.")
-            oww_model = Model()
+        if wake_word.endswith(".onnx") and os.path.exists(wake_word):
+            print(f"Loading custom openWakeWord model from path: {wake_word}")
+            oww_model = Model(wakeword_model_paths=[wake_word])
         else:
-            oww_model = Model(wakeword_model_paths=paths)
+            paths = [p for p in openwakeword.get_pretrained_model_paths() if wake_word in p]
+            if not paths:
+                print(f"Could not find model for '{wake_word}'. Loading all default models.")
+                oww_model = Model()
+            else:
+                oww_model = Model(wakeword_model_paths=paths)
     except Exception as e:
         print(f"Error loading model: {e}")
         print("Please check openWakeWord installation and models.")
@@ -44,7 +52,7 @@ def listen_for_wake_word(state_machine, state_queue, audio_queue, wake_word="ale
                 
                 # Check if any wake word was triggered above threshold
                 for mdl_name, score in prediction.items():
-                    if score > 0.5: # Threshold can be tuned
+                    if score > 0.4: # Lowered from 0.5 to 0.4 for improved responsiveness on custom wake word '小白'
                         print(f"Wake word detected! ({mdl_name}: {score:.2f})")
                         
                         # If we are IDLE, transition to LISTENING

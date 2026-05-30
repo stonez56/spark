@@ -14,6 +14,7 @@ class SparkState(enum.Enum):
 class StateMachine:
     def __init__(self):
         self.current_state = SparkState.LOADING
+        self.loading_text = "Mimo Starting..."
 
     def transition(self, new_state: SparkState):
         if self.current_state != new_state:

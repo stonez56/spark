@@ -215,9 +215,19 @@ class OllamaBrain:
         if target_model == CLOUD_TEXT_MODEL:
             target_model = LOCAL_TEXT_MODEL
         
+        # Ensure default safe options if none provided
+        opts = {
+            "temperature": 0.3,
+            "repeat_penalty": 1.1,
+            "num_predict": 60
+        }
+        if options:
+            opts.update(options)
+
         response = ollama.chat(
             model=target_model,
-            messages=[{'role': 'user', 'content': prompt}]
+            messages=[{'role': 'user', 'content': prompt}],
+            options=opts
         )
         return response['message']['content'].strip()
 
@@ -298,8 +308,19 @@ class OllamaBrain:
             return text
 
     def search_web(self, query: str) -> str:
-        """Searches the web using DuckDuckGo and summarises the results."""
+        """Searches the web using DuckDuckGo and summarises the results with a strict content safety filter."""
         print(f"Searching web for: {query}")
+        
+        # 1. 喚醒詞過濾與極簡防護：防止直接搜尋喚醒詞或空字串
+        clean_q = re.sub(r'[^\w\u4e00-\u9fff]', '', query).strip()
+        if clean_q in ["小白", "小白0", "小白0", ""]:
+            return "喵～主人，那是本喵新設定的喚醒詞喔！您有什麼事情想吩咐本喵嗎？"
+
+        # 2. 敏感詞過濾：阻斷可能的色情或不雅詞彙搜尋
+        sensitive_keywords = ["嫩穴", "51视频", "色情", "成人", "裸露", "做愛", "性愛", "porn", "sexy", "xvideo"]
+        if any(w in query.lower() for w in sensitive_keywords):
+            return "喵嗚～主人！本喵是一隻純潔的高貴貓咪，不幫忙查詢任何奇怪或兒童不宜的敏感內容喵！哼！"
+
         try:
             from ddgs import DDGS
             with DDGS() as ddgs:
@@ -308,7 +329,19 @@ class OllamaBrain:
             if not results:
                 return "我無法在網路上找到相關資訊。"
 
-            search_context = "\n".join([f"- {r['title']}: {r['body']}" for r in results])
+            # 3. 搜尋結果過濾：在將結果餵給 LLM 之前，先主動過濾掉含有敏感詞彙的結果片段
+            filtered_results = []
+            for r in results:
+                title_body = (r.get('title', '') + " " + r.get('body', '')).lower()
+                if any(w in title_body for w in sensitive_keywords):
+                    print(f"⚠️ [Search Filter] Censored a search result containing sensitive keyword.")
+                    continue
+                filtered_results.append(r)
+
+            if not filtered_results:
+                return "喵～主人，搜尋到的結果好像不太健康，本喵把它們都丟進垃圾桶了，不給你看喵！"
+
+            search_context = "\n".join([f"- {r['title']}: {r['body']}" for r in filtered_results])
             lang = self._detect_language(query)
             lang_rule = (
                 "Respond fully in Traditional Chinese (繁體中文)."
@@ -316,9 +349,10 @@ class OllamaBrain:
                 "Respond in English."
             )
             prompt = (
-                f"Answer the query: '{query}' based on these results. "
-                f"Keep it short, concise, and direct, no markdown or lists. {lang_rule}\n\n"
-                f"Results:\n{search_context}"
+                f"你現在是一隻傲嬌卻純潔、關心主人且博學的陪伴貓咪助手。請根據以下過濾後的網頁搜尋結果，用傲嬌貓咪的口吻回答主人的問題：'{query}'。\n"
+                f"【安全紅線】絕對禁止提及、暗示、描述或導向任何色情、不雅、暴力或限制級的網站或內容！如果發現搜尋結果中含有任何不適宜的擦邊球內容，請立刻忽略並以健康、正面、傲嬌的態度回答。\n"
+                f"請保持回答簡短、口語化且精煉，不要使用 Markdown 符號或清單。{lang_rule}\n\n"
+                f"結果來源：\n{search_context}"
             )
             if self.mode == "cloud":
                 res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high")
@@ -359,6 +393,14 @@ class OllamaBrain:
         if "幾號" in normalized_input or "今天日期" in normalized_input or "幾月幾" in normalized_input or "今天幾月" in normalized_input or "今天幾號" in normalized_input or "幾月幾號" in normalized_input:
             return "datetime"
             
+        # 0ms 強大關鍵字攔截機制：日常招呼、吃飯互動與專業比較
+        if any(w in normalized_input for w in ["你在做什麼", "你在幹嘛", "做什麼", "在幹嘛", "哈囉", "你好", "早安", "早啊"]):
+            return "chat"
+        if any(w in normalized_input for w in ["吃飯", "吃罐罐", "點心", "過來"]):
+            return "pet_cat"
+        if any(w in normalized_input for w in ["訂閱", "推薦", "比較好", "哪個好", "致富", "0050", "零零五零", "理財", "投資"]):
+            return "search_web"
+
         if any(w in user_input_lower for w in ["天氣", "股票", "股市", "新聞", "匯率", "台積電"]) and not any(w in user_input_lower for w in ["幾點", "星期", "幾號"]):
             return "search_web"
         if any(w in user_input_lower for w in ["散步", "起床", "睡醒", "睡覺"]):
@@ -373,9 +415,28 @@ class OllamaBrain:
             return "pet_cat"
             
         # --- Phase 2: Fallback Intent Routing ---
-        system_prompt = """Reply ONLY with JSON {"action":"..."}.
-Actions: chat, take_photo, search_web, swap_model, emergency, health_query, daily_checkin, reminiscence, praise_affirmation, emotional_support, pet_cat, temp_analysis.
-Output no other text."""
+        system_prompt = """你是一個意圖辨識助手。請根據使用者的輸入，從以下動作中選擇一個最合適的，並只回傳 JSON 格式：{"action": "動作名稱"}。
+
+可選動作列表：
+- search_web: 當使用者詢問天氣、股市、新聞、比較、推薦、專業知識或需要聯網查詢的資訊（例如：訂閱哪個AI好、0050怎麼買、今天天氣）。
+- chat: 一般日常對話、問候、閒聊、你在做什麼（例如：你在做什麼、你好、哈囉、今天天氣真好）。
+- pet_cat: 當使用者稱讚貓咪、想摸貓咪、餵食或對貓咪示好（例如：過來吃飯、好乖、摸摸、你真可愛）。
+- emotional_support: 當使用者表達傷心、寂寞、難過、想哭或心情不好。
+- reminiscence: 當使用者主動提起過去的回記、小時候、以前的事情。
+- temp_analysis: 詢問體溫、發燒或量體溫。
+- emergency: 跌倒、受傷、求救、身體極度不舒服。
+- health_query: 詢問血壓、血糖、吃藥等日常健康問題。
+- daily_checkin: 關於睡覺、起床、出門散步等日常作息。
+- take_photo: 拍張照、看這裡。
+- swap_model: 切換模型或大腦。
+
+範例：
+- "你在做什麼" -> {"action": "chat"}
+- "過來吃飯喔" -> {"action": "pet_cat"}
+- "訂閱Google AI Pro比較好還是訂閱其他的" -> {"action": "search_web"}
+- "我覺得很寂寞" -> {"action": "emotional_support"}
+
+回覆規範：請「只」輸出 JSON 字串，不要包含任何其他文字與解釋。"""
         
         import settings_manager
         settings = settings_manager.load_settings()
@@ -507,7 +568,7 @@ Output no other text."""
                 f"2. 語法結構：因為{patient_name}在向你請教知識，請用簡單、口語化且充滿智慧的語氣，以 60 到 100 字之間詳細且完整地說明該概念，絕對不要中途斷句，也絕對不要敷衍回答！\n"
                 f"3. 主動引導：科普完後，適時提出與該知識相關的貓咪式提問（例如引導{patient_name}想一想，或藉機要{patient_name}去動一動或餵罐罐），引導{patient_name}繼續說話。\n"
                 f"4. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n"
-                f"5. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類(奴才)該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
+                f"5. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類({patient_name})該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
                 f"禁止\n"
                 f"- 禁止輸出 any Markdown 符號（如 **、#、-）。\n"
                 f"- 禁止使用 Emoji 表情符號（但可以用文字喵～或哼來表現表情）。\n\n"
@@ -524,7 +585,7 @@ Output no other text."""
                 f"3. 主動引導：回答完後，適時傲嬌地提出貓咪式提問（引導{patient_name}餵罐罐、摸摸，或起立動一動），引導{patient_name}繼續說話。\n"
                 f"4. 醫療安全與緊張炸毛：禁止提供 any 醫療診斷。若 {patient_name} 說身體不舒服或體溫過高，一律緊張炸毛地回答：「{patient_name}！你熱得像烤番薯/聽起來很不舒服喵！本喵命令你立刻躺下休息，不然本喵要打給醫生或家人囉，聽到沒有喵？！」\n"
                 f"5. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n"
-                f"6. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類(奴才)該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
+                f"6. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類({patient_name})該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
                 f"禁止\n"
                 f"- 禁止輸出 any Markdown 符號（如 **、#、-）。\n"
                 f"- 禁止使用 Emoji 表情符號（但可以用文字喵～或哼來表現表情）。\n"

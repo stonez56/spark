@@ -20,7 +20,7 @@ from memory import MimoMemory
 from brain import OllamaBrain
 from stt import SparkSTT
 from tts import SparkTTS
-from config import LLM_MODE, LOCAL_TEXT_MODEL, CLOUD_TEXT_MODEL
+from config import LLM_MODE, LOCAL_TEXT_MODEL, CLOUD_TEXT_MODEL, WAKE_WORD
 from oled_controller import OLEDController
 from camera_controller import CameraController
 
@@ -28,20 +28,36 @@ def get_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
 def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue):
+    # Initialize and start OLED first so it shows loading status on SSD1306
+    oled_ctrl = OLEDController(sm)
+    oled_ctrl.start()
+    
     print("Loading AI Models...")
     
     try:
+        sm.loading_text = "Loading WakeWord..."
         import openwakeword
         from openwakeword.model import Model
-        wake_word = "alexa"
-        paths = [p for p in openwakeword.get_pretrained_model_paths() if wake_word in p]
-        oww_model = Model(wakeword_model_paths=paths) if paths else Model()
+        if WAKE_WORD.endswith(".onnx") and os.path.exists(WAKE_WORD):
+            print(f"Loading custom openWakeWord model from path: {WAKE_WORD}")
+            oww_model = Model(wakeword_model_paths=[WAKE_WORD])
+        else:
+            paths = [p for p in openwakeword.get_pretrained_model_paths() if WAKE_WORD in p]
+            oww_model = Model(wakeword_model_paths=paths) if paths else Model()
 
+        sm.loading_text = "Loading STT..."
         stt = SparkSTT(model_size="base")
+        
+        sm.loading_text = "Loading LLM..."
         brain = OllamaBrain()
+        
+        sm.loading_text = "Loading Memory..."
         memory = MimoMemory()
+        
+        sm.loading_text = "Loading TTS..."
         tts = SparkTTS()
         
+        sm.loading_text = "Loading Cache..."
         import audio_cache
         audio_cache.initialize(tts)
         
@@ -55,10 +71,6 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
     consecutive_pets = 0
     last_pet_time = 0.0
     
-    # Initialize OLED and Camera controllers
-    oled_ctrl = OLEDController(sm)
-    oled_ctrl.start()
-    
     camera_ctrl = CameraController(sm, command_queue)
     camera_ctrl.start()
     
@@ -68,6 +80,8 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
     stt_buffer = []
     listening_start = 0
+    audio_buffer = bytearray()
+    CHUNK_BYTES = 2560
 
     while True:
         # ── Check for mode-switch commands from UI ──
@@ -281,51 +295,64 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
         if not audio_queue.empty():
             audio_bytes = audio_queue.get()
-            audio_data = np.frombuffer(audio_bytes, dtype=np.int16)
 
             if state == SparkState.IDLE:
-                prediction = oww_model.predict(audio_data)
-                for mdl_name, score in prediction.items():
-                    if score > 0.5:
-                        print(f"Wake word detected! ({score:.2f})")
-                        oww_model.reset()
-                        
-                        # ── Play wake-word acknowledgement immediately ──────
-                        import audio_cache
-                        ack_audio = audio_cache.get_random_filler("wake_word_ack")
-                        if ack_audio:
-                            tts_queue.put(ack_audio)
-                            # Wait for ack to finish before opening mic
-                            # PCM int16: bytes / (sample_rate * 2 bytes per sample)
-                            ack_duration = len(ack_audio) / (audio_cache.SAMPLE_RATE * 2)
-                            time.sleep(ack_duration + 0.1)  # +0.1s margin
-                        
-                        # ── Flush Stale Audio Buffer (WebSockets) ──────────
-                        while not audio_queue.empty():
-                            try:
-                                audio_queue.get_nowait()
-                            except:
-                                break
+                audio_buffer.extend(audio_bytes)
+                while len(audio_buffer) >= CHUNK_BYTES:
+                    chunk = audio_buffer[:CHUNK_BYTES]
+                    del audio_buffer[:CHUNK_BYTES]
+                    
+                    audio_data = np.frombuffer(chunk, dtype=np.int16)
+                    prediction = oww_model.predict(audio_data)
+                    
+                    detected_trigger = False
+                    for mdl_name, score in prediction.items():
+                        if score > 0.4:  # Lowered from 0.5 to 0.4 for improved responsiveness on custom wake word '小白'
+                            print(f"Wake word detected! ({mdl_name}: {score:.2f})")
+                            oww_model.reset()
+                            audio_buffer.clear()  # Clear buffer to avoid double triggering
+                            detected_trigger = True
+                            
+                            # ── Play wake-word acknowledgement immediately ──────
+                            import audio_cache
+                            ack_audio = audio_cache.get_random_filler("wake_word_ack")
+                            if ack_audio:
+                                tts_queue.put(ack_audio)
+                                # Wait for ack to finish before opening mic
+                                # PCM int16: bytes / (sample_rate * 2 bytes per sample)
+                                ack_duration = len(ack_audio) / (audio_cache.SAMPLE_RATE * 2)
+                                time.sleep(ack_duration + 0.1)  # +0.1s margin
+                            
+                            # ── Flush Stale Audio Buffer (WebSockets) ──────────
+                            while not audio_queue.empty():
+                                try:
+                                    audio_queue.get_nowait()
+                                except:
+                                    break
 
-                        # ── Now enter LISTENING ────────────────────────────
-                        sm.transition(SparkState.LISTENING)
-                        state_queue.put(SparkState.LISTENING)
-                        stt_buffer = []
-                        listening_start = time.time()
-                        last_active_time = time.time()
-                        has_spoken = False
-                        
-                        # 讀取並計算自適應靜音斷句超時時間
-                        import settings_manager
-                        speed_mode = settings_manager.load_settings().get("speaking_speed", "normal")
-                        if speed_mode == "fast":
-                            active_silence_timeout = 1.2
-                        elif speed_mode == "slow":
-                            active_silence_timeout = 2.5
-                        else:
-                            active_silence_timeout = 1.8
+                            # ── Now enter LISTENING ────────────────────────────
+                            sm.transition(SparkState.LISTENING)
+                            state_queue.put(SparkState.LISTENING)
+                            stt_buffer = []
+                            listening_start = time.time()
+                            last_active_time = time.time()
+                            has_spoken = False
+                            
+                            # 讀取並計算自適應靜音斷句超時時間
+                            import settings_manager
+                            speed_mode = settings_manager.load_settings().get("speaking_speed", "normal")
+                            if speed_mode == "fast":
+                                active_silence_timeout = 1.2
+                            elif speed_mode == "slow":
+                                active_silence_timeout = 2.5
+                            else:
+                                active_silence_timeout = 1.8
+                            break
+                    if detected_trigger:
+                        break
 
             elif state == SparkState.LISTENING or state == SparkState.ATTENTIVE:
+                audio_data = np.frombuffer(audio_bytes, dtype=np.int16)
                 stt_buffer.append(audio_data)
 
                 # ── Voice Activity Detection (VAD) 簡易且健全的能量檢測 ──
@@ -425,7 +452,6 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                                 print(">>> [System] Line Notify: EMERGENCY TRIGGERED! Sending alert to family.")
                             handle_emergency()
                         elif action == "take_photo":
-                            import os
                             # Capture frame in a thread-safe, non-conflicting background manner
                             success = camera_ctrl.capture_to_file("./1.jpg")
                             if success and os.path.exists("./1.jpg"):

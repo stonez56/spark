@@ -129,7 +129,8 @@ class OLEDController:
         
         if state == SparkState.LOADING:
             # Animated breathing Zzz bubbles for sleeping/loading state
-            draw.text((10, 25), "Mimo Loading...", fill=255)
+            loading_msg = getattr(self.sm, "loading_text", "Mimo Loading...")
+            draw.text((10, 25), loading_msg, fill=255)
             # Draw Zzz
             zzz_offset = (frame // 4) % 3
             for i in range(zzz_offset + 1):

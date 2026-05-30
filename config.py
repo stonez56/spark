@@ -23,6 +23,13 @@ load_dotenv()
 LLM_MODE = "local"
 
 # ──────────────────────────────────────────
+# WAKE WORD settings
+# ──────────────────────────────────────────
+# 可以是 openwakeword 的內建模型名稱（例如："alexa"）
+# 或是自訂的 .onnx 喚醒詞模型路徑（例如："models/小白.onnx"）
+WAKE_WORD = "models/小白.onnx"
+
+# ──────────────────────────────────────────
 # LOCAL (Ollama) settings
 # ──────────────────────────────────────────
 LOCAL_TEXT_MODEL   = "llama3.2:3b"
