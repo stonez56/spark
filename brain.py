@@ -86,10 +86,12 @@ def filter_degenerative_repetition(text: str) -> str:
 
 class OllamaBrain:
     def __init__(self):
-        self.mode = LLM_MODE
         import settings_manager
         settings = settings_manager.load_settings()
-        self.routing_mode = settings.get("routing_mode", "local")
+        
+        # Load active mode from settings.json, falling back to LLM_MODE from config.py
+        self.mode = settings.get("routing_mode", LLM_MODE)
+        self.routing_mode = self.mode
         
         # ── Daily API call counter ──
         self._call_date = date.today()
@@ -128,6 +130,14 @@ class OllamaBrain:
             else:
                 from config import LOCAL_TEXT_MODEL
                 self.text_model = LOCAL_TEXT_MODEL
+            
+            # Persist mode change in settings.json so it survives restarts
+            import settings_manager
+            settings = settings_manager.load_settings()
+            if settings.get("routing_mode") != mode:
+                settings["routing_mode"] = mode
+                settings_manager.save_settings(settings)
+                
             print(f"[Brain Mode] Swapped to {self.mode.upper()} | Model: {self.text_model}")
 
     def _track_call(self, label: str = ""):

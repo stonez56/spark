@@ -150,7 +150,11 @@ async def update_settings(payload: dict):
         settings["speaking_speed"] = payload["speaking_speed"]
         
     if "routing_mode" in payload:
-        settings["routing_mode"] = payload["routing_mode"]
+        new_routing_mode = payload["routing_mode"]
+        if new_routing_mode != settings.get("routing_mode"):
+            settings["routing_mode"] = new_routing_mode
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put(new_routing_mode)
         
     settings_manager.save_settings(settings)
     
@@ -158,8 +162,6 @@ async def update_settings(payload: dict):
         app.state.command_queue.put({'type': 'regenerate_cache'})
         
     return JSONResponse({"status": "ok"})
-
-
 @app.post("/api/reset-db")
 async def reset_db_endpoint():
     try:

@@ -263,33 +263,32 @@
         }
 
         .state-Thinking .left-eye {
-            ry: 20;
+            ry: 8;
             rx: 40;
             cy: 180;
             cx: 250;
+            transform: rotate(4deg);
             transform-origin: 250px 180px;
-            animation: spin-left 2s infinite linear;
         }
 
         .state-Thinking .right-eye {
-            ry: 20;
+            ry: 8;
             rx: 40;
             cy: 180;
             cx: 510;
+            transform: rotate(-4deg);
             transform-origin: 510px 180px;
-            animation: spin-right 2s infinite linear;
         }
 
         .state-Thinking .mouth {
-            d: path("M 330 330 Q 360 310 380 330 T 430 330");
+            d: path("M 370 330 Q 385 320 400 330 Q 415 340 430 330");
+            transform-origin: 400px 330px;
+            animation: thinking-breath 4s infinite ease-in-out;
         }
 
-        @keyframes spin-left {
-            100% { transform: rotate(360deg); }
-        }
-
-        @keyframes spin-right {
-            100% { transform: rotate(-360deg); }
+        @keyframes thinking-breath {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.04); }
         }
 
         .state-Speaking .left-eye {
