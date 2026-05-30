@@ -1,20 +1,32 @@
+# Environment configuration file
 .env
-./memory
-__pycache__
 
-#Ignore all voice files
+# Python build artifacts and cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Python virtual environment
+.venv/
+
+# AI models (ONNX, Whisper, Piper) - large binary files
 *.onnx
+models/
 
-# Remove audio_catch_data
-audio_cache_data/*.*
+# Zero-latency audio cache folder
+audio_cache_data/
 
-
-
+# Application databases & memory files
 *.db
-.venv
+mimo_memory.db
+reminders.db
+spark_memory.db
+
+# Vector memories / ChromaDB directories
+mimo_chroma_db/
+chroma_db/
+memory/
+
+# Other temporary or build artifacts
 opencode
 length.bin
-
-spark_memory.db
-mimo_chroma_db/*.*
-chroma_db/*.*
