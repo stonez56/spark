@@ -32,6 +32,87 @@ from camera_controller import CameraController
 def get_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
+def format_reminder_confirmation(message: str, trigger_time: str, start_date: str = None) -> str:
+    """
+    Format a beautiful, natural, and accurate Traditional Chinese confirmation message.
+    Avoids embarrassing hardcoded '今天下午 07:00' when the user said morning or a different day.
+    """
+    # 1. Parse time period (早上/上午/中午/下午/晚上/半夜)
+    try:
+        hour = int(trigger_time.split(":")[0])
+        minute = int(trigger_time.split(":")[1])
+    except Exception:
+        hour = 12
+        minute = 0
+        
+    if 0 <= hour < 5:
+        period = "半夜"
+    elif 5 <= hour < 11:
+        period = "早上"
+    elif 11 <= hour < 13:
+        period = "中午"
+    elif 13 <= hour < 18:
+        period = "下午"
+    else:
+        period = "晚上"
+        
+    # Format hour to 12-hour clock for natural speech
+    display_hour = hour if hour <= 12 else hour - 12
+    if hour == 0:
+        display_hour = 12
+        
+    if minute == 0:
+        time_display = f"{period}{display_hour}點"
+    else:
+        time_display = f"{period}{display_hour}點{minute}分"
+
+    # 2. Parse date period (今天/明天/後天/特定日期)
+    date_display = "今天"
+    if start_date:
+        import datetime as dt
+        try:
+            today = dt.date.today()
+            target_date = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
+            delta = (target_date - today).days
+            if delta == 0:
+                date_display = "今天"
+            elif delta == 1:
+                date_display = "明天"
+            elif delta == 2:
+                date_display = "後天"
+            else:
+                date_display = f"{target_date.month}月{target_date.day}號"
+        except Exception as e:
+            print(f"Error parsing date delta: {e}")
+            date_display = "今天"
+
+    return f"記下來了！會在{date_display}{time_display}提醒你「{message}」喵！"
+
+def format_reminder_trigger_sentence(message: str) -> str:
+    """
+    Generate a beautiful, tsundere cat character reminder sentence for the scheduler trigger.
+    """
+    import random
+    templates = [
+        f"喂！時間到啦！本喵特地來提醒你「{message}」喵！可別忘了！",
+        f"喵嗚～說好了現在要提醒你「{message}」的，本喵說到做到，快去吧！",
+        f"哼，本喵才不是特地關心你呢，只是時間到了，提醒你該去「{message}」了喵！",
+        f"時間到了喔！本喵大發慈悲提醒你該去「{message}」了喵～"
+    ]
+    return random.choice(templates)
+
+def get_js_weekday(date_str: str) -> str:
+    """
+    Get the JavaScript-aligned weekday ('0' for Sunday, '1' for Monday, etc.)
+    from a YYYY-MM-DD date string.
+    """
+    import datetime
+    try:
+        dt_obj = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        return str((dt_obj.weekday() + 1) % 7)
+    except Exception:
+        return "0,1,2,3,4,5,6"
+
 def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue):
     # Initialize and start OLED first so it shows loading status on SSD1306
     oled_ctrl = OLEDController(sm)
@@ -75,6 +156,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
     active_silence_timeout = 1.8  # 預設自適應靜音斷句超時時間
     consecutive_pets = 0
     last_pet_time = 0.0
+    pending_reminder = None  # 用於語音生活排程多輪對話追問暫存器
     
     camera_ctrl = CameraController(sm, command_queue)
     camera_ctrl.start()
@@ -103,14 +185,15 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
             cmd = command_queue.get()
             if cmd['type'] == 'reminder':
                 msg = cmd['message']
-                print(f"\n[System] Orchestrating reminder: {msg}")
-                transcript_queue.put(("[System Reminder]", msg))
+                trigger_sentence = format_reminder_trigger_sentence(msg)
+                print(f"\n[System] Orchestrating reminder sentence: '{trigger_sentence}'")
+                transcript_queue.put(("[System Reminder]", trigger_sentence))
                 
                 sm.transition(SparkState.SPEAKING)
                 state_queue.put(SparkState.SPEAKING)
                 stop_audio_flag.clear()
                 
-                audio_output = tts.synthesize(msg)
+                audio_output = tts.synthesize(trigger_sentence)
                 tts_queue.put(audio_output)
                 
                 audio_duration = len(audio_output) / (22050 * 2)
@@ -419,7 +502,26 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
                     response = "..."
                     if transcription:
-                        action = brain.route_intent(transcription)
+                        # Always route the intent first to check if user has shifted topics or issued a new command
+                        routed_action = brain.route_intent(transcription)
+                        
+                        if pending_reminder is not None:
+                            # If they explicitly want to swap model, ask for datetime, trigger emergency, take photo, etc.
+                            # we should prioritize those actions and clear/abort the pending reminder.
+                            if routed_action in ["swap_model", "datetime", "emergency", "take_photo", "search_web"]:
+                                action = routed_action
+                                pending_reminder = None  # Abort the pending reminder
+                            elif routed_action == "add_reminder":
+                                # The user wants to set a NEW reminder, so we abort the old one and process as a new add_reminder!
+                                action = "add_reminder"
+                                pending_reminder = None
+                            elif any(w in transcription for w in ["取消", "不用了", "算了", "不要了"]):
+                                action = "add_reminder_followup"
+                            else:
+                                # Default to followup for the active session
+                                action = "add_reminder_followup"
+                        else:
+                            action = routed_action
                         print(f"[{get_timestamp()}] Decided action: {action}")
 
                         if action in ["chat", "health_query", "daily_checkin", "reminiscence", "praise_affirmation", "emotional_support", "datetime"]:
@@ -476,6 +578,61 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                             brain.set_mode(new_mode)
                             mode_queue.put(new_mode)  # Update UI
                             response = f"好喔！我已經切換到{'雲端' if new_mode == 'cloud' else '本地'}大腦了。"
+                        elif action == "add_reminder":
+                            # 1. Parse the user's natural language input
+                            parsed = brain.parse_reminder_data(transcription)
+                            
+                            # 2. Check if we need clarification (e.g. no time provided)
+                            if parsed.get("needs_clarification", False) or parsed.get("time") is None:
+                                pending_reminder = {
+                                    "message": parsed.get("message") or "事情",
+                                    "start_date": parsed.get("start_date")
+                                }
+                                response = f"好喔！你要本喵在什麼時間，或者哪個地點提醒你「{pending_reminder['message']}」呢？喵～"
+                            else:
+                                # We have both time and message! Add directly to db
+                                import reminders_db
+                                message = parsed.get("message") or "吃藥"
+                                trigger_time = parsed["time"]
+                                start_date = parsed.get("start_date")
+                                days_of_week = get_js_weekday(start_date) if start_date else "0,1,2,3,4,5,6"
+                                reminders_db.add_reminder(message=message, times=trigger_time, days_of_week=days_of_week, start_date=start_date, end_date=start_date)
+                                response = format_reminder_confirmation(message=message, trigger_time=trigger_time, start_date=start_date)
+                        elif action == "add_reminder_followup":
+                            # Check if user wants to cancel
+                            if any(w in transcription for w in ["取消", "不用了", "算了", "不要了"]):
+                                pending_reminder = None
+                                response = "好啦，那本喵就不記了喵～"
+                            else:
+                                # Parse the follow-up answer (e.g. "下午四點半")
+                                parsed = brain.parse_reminder_data(transcription)
+                                trigger_time = parsed.get("time")
+                                new_message = parsed.get("message")
+                                
+                                # If the user provided a new message in the follow-up, update it!
+                                if new_message and new_message != "事情" and new_message != pending_reminder["message"]:
+                                    pending_reminder["message"] = new_message
+                                    
+                                # Resolve date from parsed input or carryover from pending session
+                                import datetime as dt
+                                today_str = dt.date.today().strftime("%Y-%m-%d")
+                                parsed_date = parsed.get("start_date")
+                                pending_date = pending_reminder.get("start_date")
+                                
+                                if parsed_date and parsed_date != today_str:
+                                    start_date = parsed_date
+                                else:
+                                    start_date = pending_date or parsed_date
+                                
+                                if trigger_time is not None:
+                                    import reminders_db
+                                    message = pending_reminder["message"]
+                                    days_of_week = get_js_weekday(start_date) if start_date else "0,1,2,3,4,5,6"
+                                    reminders_db.add_reminder(message=message, times=trigger_time, days_of_week=days_of_week, start_date=start_date, end_date=start_date)
+                                    pending_reminder = None # Clear state
+                                    response = format_reminder_confirmation(message=message, trigger_time=trigger_time, start_date=start_date)
+                                else:
+                                    response = f"喵嗚？本喵沒有聽懂時間耶。請再說一次幾點提醒你「{pending_reminder['message']}」好嗎？喵～"
                         else:
                             response = "我不太確定該怎麼做，您可以再說一次嗎？"
 
@@ -510,8 +667,18 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         except:
                             break
 
-                    sm.transition(SparkState.IDLE)
-                    state_queue.put(SparkState.IDLE)
+                    if pending_reminder is not None:
+                        # Auto-transition to LISTENING for seamless follow-up!
+                        sm.transition(SparkState.LISTENING)
+                        state_queue.put(SparkState.LISTENING)
+                        stt_buffer = []
+                        listening_start = time.time()
+                        last_active_time = time.time()
+                        has_spoken = False
+                        oww_model.reset()
+                    else:
+                        sm.transition(SparkState.IDLE)
+                        state_queue.put(SparkState.IDLE)
                     stt_buffer = []
         else:
             time.sleep(0.01)
@@ -559,11 +726,18 @@ def main():
             import datetime
             import reminders_db
             last_triggered = set()
+            last_minute = None
             while True:
                 now = datetime.datetime.now()
                 current_time = now.strftime("%H:%M")
                 current_date = now.strftime("%Y-%m-%d")
-                current_weekday = str(now.weekday()) # 0=Monday, 6=Sunday
+                # Align Python weekday (0=Monday, 6=Sunday) with JS/DB dayMap (0=Sunday, 1=Monday, ..., 6=Saturday)
+                current_weekday = str((now.weekday() + 1) % 7)
+                
+                # Clear triggers only when a new minute starts, completely avoiding race condition double-triggers
+                if current_time != last_minute:
+                    last_triggered.clear()
+                    last_minute = current_time
                 
                 reminders = reminders_db.get_all_reminders()
                 for rem in reminders:
@@ -597,10 +771,20 @@ def main():
                                 
                             print("[Scheduler] Person present. Sending to orchestrator...")
                             command_queue.put({'type': 'reminder', 'message': rem['message']})
+                            
+                            # If it's a one-off reminder (start_date == end_date), mark as inactive in DB
+                            if rem['start_date'] and rem['start_date'] == rem['end_date']:
+                                print(f"[Scheduler] One-off reminder triggered. Deactivating reminder ID: {rem['id']}")
+                                reminders_db.update_reminder(
+                                    reminder_id=rem['id'],
+                                    message=rem['message'],
+                                    times=rem['times'],
+                                    days_of_week=rem['days_of_week'],
+                                    start_date=rem['start_date'],
+                                    end_date=rem['end_date'],
+                                    is_active=False
+                                )
                 
-                if now.second == 0:
-                    last_triggered.clear()
-                    
                 time.sleep(1)
 
         scheduler_thread = threading.Thread(target=reminder_scheduler, daemon=True)

@@ -22,6 +22,27 @@ class SparkTTS:
         Converts all sequences of Arabic numerals in the text to Traditional Chinese spoken words.
         E.g. '5TB' -> '五TB', '50' -> '五十', '2026' -> '二千零二十六'
         """
+        # 先將 HH:MM 時間格式轉化為自然的中文口語表達，避免被拆分為冒號與數字（如 07:00 ➔ 七:零）
+        def time_replace(match):
+            hour_str = match.group(1)
+            min_str = match.group(2)
+            hour = int(hour_str)
+            minute = int(min_str)
+            
+            if hour == 0:
+                hour_zh = "12"
+            else:
+                hour_zh = str(hour)
+                
+            if minute == 0:
+                return f"{hour_zh}點"
+            elif minute == 30:
+                return f"{hour_zh}點半"
+            else:
+                return f"{hour_zh}點{minute}分"
+
+        text = re.sub(r'(\d{1,2}):(\d{2})', time_replace, text)
+
         def num_to_zh(num_str: str) -> str:
             if len(num_str) > 4:
                 digits = {"0":"零", "1":"一", "2":"二", "3":"三", "4":"四", "5":"五", "6":"六", "7":"七", "8":"八", "9":"九"}

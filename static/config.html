@@ -415,9 +415,17 @@
             }
             
             data.forEach(rem => {
-                const daysText = rem.days_of_week.split(',').map(d => dayMap[d.trim()]).join('、');
-                const dateText = (rem.start_date || rem.end_date) ? 
-                    `[${rem.start_date||'--'} ~ ${rem.end_date||'--'}]` : '永久有效';
+                if (!rem.is_active) return;
+                
+                let recurrenceText = '';
+                if (rem.start_date && rem.start_date === rem.end_date) {
+                    recurrenceText = `📅 僅限當天 [${rem.start_date}]`;
+                } else {
+                    const daysText = rem.days_of_week.split(',').map(d => dayMap[d.trim()]).join('、');
+                    const dateText = (rem.start_date || rem.end_date) ? 
+                        `[${rem.start_date||'--'} ~ ${rem.end_date||'--'}]` : '永久有效';
+                    recurrenceText = `📅 每週${daysText} (${dateText})`;
+                }
                 
                 const div = document.createElement('div');
                 div.className = 'reminder-item';
@@ -426,7 +434,7 @@
                         <div class="reminder-title">${rem.message}</div>
                         <div class="reminder-desc">
                             ⏰ ${rem.times} <br>
-                            📅 每週${daysText} (${dateText})
+                            ${recurrenceText}
                         </div>
                     </div>
                     <button class="btn-danger" onclick="deleteReminder(${rem.id})">刪除</button>

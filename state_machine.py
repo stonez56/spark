@@ -18,7 +18,9 @@ class StateMachine:
 
     def transition(self, new_state: SparkState):
         if self.current_state != new_state:
-            print(f"State transitioned from {self.current_state.name} to {new_state.name}")
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+            print(f"[{timestamp}] State transitioned from {self.current_state.name} to {new_state.name}")
             self.current_state = new_state
             
     def get_state(self):

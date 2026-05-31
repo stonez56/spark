@@ -83,6 +83,41 @@ def filter_degenerative_repetition(text: str) -> str:
     return text
 
 
+def is_explicit_reminder_command(text: str) -> bool:
+    """
+    Verify if the user input is a high-confidence explicit reminder command.
+    Prevents false positives like "我上次就提醒過你" or "謝謝你的提醒".
+    """
+    text = text.strip()
+    if not text:
+        return False
+        
+    # 1. Negative guardrails: if it contains words representing past tense, questioning, 
+    # or politeness, it is highly likely a conversational remark rather than a command.
+    negative_indicators = [
+        "過", "了", "謝謝", "谢谢", "感恩", "不客氣", "不客气", 
+        "怎麼", "怎么", "你提醒我", "提醒過你", "提醒過我", 
+        "提醒了", "你的提醒", "是不是"
+    ]
+    if any(ind in text for ind in negative_indicators):
+        return False
+
+    # 2. Strict Command Patterns (Traditional Chinese / Taiwan style) with homophone support:
+    # Must start with or contain clear active imperative verbs
+    positive_patterns = [
+        r"^(提醒我|體型我|提型我|幫我記|幫我記住|幫我寄|幫我寫下|幫我寫下來|叫我|叫我起床|叫醒我|幫我設|幫我設定|幫我定|幫我訂|設定鬧鐘|設鬧鐘|定個鬧鐘|開個鬧鐘|定鬧鐘|倒數|計時)",
+        r"(記得|寄得|時間到|到時候)(提醒我|體型我|叫我|幫我記|幫我寫)",
+        r"\d+點.*(叫我|提醒我|體型我)",
+        r"(下午|早上|中午|晚上|半夜).*(叫我|提醒我|體型我)"
+    ]
+    
+    import re
+    for pat in positive_patterns:
+        if re.search(pat, text):
+            return True
+            
+    return False
+
 
 class OllamaBrain:
     def __init__(self):
@@ -381,8 +416,12 @@ class OllamaBrain:
         """
         print(f"Routing intent for: {user_input}")
         user_input_lower = user_input.lower()
+        normalized_input = clean_traditional_chinese(user_input_lower)
         
         # --- Phase 1: Fast Rule-Based Matching ---
+        if is_explicit_reminder_command(normalized_input):
+            return "add_reminder"
+            
         if any(w in user_input_lower for w in ["跌倒", "痛", "救命", "暈", "不舒服"]):
             return "emergency"
         if any(w in user_input_lower for w in ["血壓", "藥", "血糖"]):
@@ -428,6 +467,8 @@ class OllamaBrain:
         system_prompt = """你是一個意圖辨識助手。請根據使用者的輸入，從以下動作中選擇一個最合適的，並只回傳 JSON 格式：{"action": "動作名稱"}。
 
 可選動作列表：
+- add_reminder: 當使用者主動要求系統在未來設定一個提醒、鬧鐘、排程、定時器或備忘事件（例如：提醒我下午四點半喝水、明天早上八點叫我起床、4點50分提醒我吃藥、幫我記一下買雞蛋、幫我記住開會時間）。注意：必須有明確的「主動要求提醒」或「命令記錄」口吻。如果只是單純詢問日期或時間，絕對不能歸入此項！
+- datetime: 當使用者詢問目前的日期、時間、星期幾、今年是哪一年（例如：今天幾月幾號、現在幾點了、今天是星期幾、今天集合集號）。
 - search_web: 當使用者詢問天氣、股市、新聞、比較、推薦、專業知識或需要聯網查詢的資訊（例如：訂閱哪個AI好、0050怎麼買、今天天氣）。
 - chat: 一般日常對話、問候、閒聊、你在做什麼（例如：你在做什麼、你好、哈囉、今天天氣真好）。
 - pet_cat: 當使用者稱讚貓咪、想摸貓咪、餵食或對貓咪示好（例如：過來吃飯、好乖、摸摸、你真可愛）。
@@ -445,6 +486,11 @@ class OllamaBrain:
 - "過來吃飯喔" -> {"action": "pet_cat"}
 - "訂閱Google AI Pro比較好還是訂閱其他的" -> {"action": "search_web"}
 - "我覺得很寂寞" -> {"action": "emotional_support"}
+- "提醒我下午四點半喝水" -> {"action": "add_reminder"}
+- "幫我記一下買雞蛋" -> {"action": "add_reminder"}
+- "今天幾月幾號" -> {"action": "datetime"}
+- "現在幾點了" -> {"action": "datetime"}
+- "今天集合集號" -> {"action": "datetime"}
 
 回覆規範：請「只」輸出 JSON 字串，不要包含任何其他文字與解釋。"""
         
@@ -638,3 +684,75 @@ class OllamaBrain:
         except Exception as e:
             print(f"Error generating response: {e}")
             return "I'm having trouble thinking right now."
+
+    def parse_reminder_data(self, user_input: str) -> dict:
+        """
+        Parses reminder event details and time from user natural language input.
+        Returns a dict: {"message": str, "time": "HH:MM", "needs_clarification": bool, "clarification_type": str}
+        """
+        from datetime import datetime
+        now = datetime.now()
+        weekday_map = ["日", "一", "二", "三", "四", "五", "六"]
+        current_time_str = now.strftime(f"%Y-%m-%d %H:%M:%S (星期{weekday_map[int(now.strftime('%w'))]})")
+        
+        system_prompt = f"""你是一個精準的時間與事件語意提取助手。請分析使用者的輸入，並將其轉化為嚴格的 JSON 格式回傳。
+當前系統時間是：{current_time_str}。
+
+提取規則：
+1. "message": 提取使用者想要被提醒的事件或任務（例如：「吃藥」、「買牛奶」、「喝水」、「起床」、「買雞蛋」、「開會」、「買衛生紙」）。如果只有時間沒有事件（如在第二輪追問下回答時間），則此欄位設為 null。
+2. "time": 將語音提及的時間轉換為精確的 24 小時制 "HH:MM" 格式（例如：「4.50分」依當前時間下午判定為 "16:50"；「下午三點半」為 "15:30"；「明早八點」為 "08:00"）。如果沒有提供明確的可觸發時間，則填入 null。
+3. "start_date": 根據當前系統時間與使用者提及的相對日期（如「今天」、「明天」、「後天」或特定日期），計算並轉化為 "YYYY-MM-DD" 格式。若未提及日期但有明確時間點，默認推算為當天日期。如果連時間都沒有提到，則填入 null。
+4. "needs_clarification": 布林值 (true 或 false)。如果時間 ("time") 為 null，且使用者沒有提及任何具體的可觸發時間，則設為 true。否則設為 false。
+5. "clarification_type": 如果 needs_clarification 為 true，則設為 "time_or_location"。否則設為 null。
+
+範例：
+- "提醒我一下,4.50分我要吃藥" -> {{"message": "吃藥", "time": "16:50", "start_date": "2026-05-31", "needs_clarification": false, "clarification_type": null}}
+- "幫我記一下買雞蛋" -> {{"message": "買雞蛋", "time": null, "start_date": null, "needs_clarification": true, "clarification_type": "time_or_location"}}
+- "在家裡,明天早上7點" -> {{"message": null, "time": "07:00", "start_date": "2026-06-01", "needs_clarification": false, "clarification_type": null}}
+
+回覆規範：請「只」輸出 JSON 字串，不要包含任何額外解釋或 Markdown 標記。"""
+
+        print(f"[{get_timestamp()}] [Brain parse_reminder_data] parsing input: {user_input}")
+        
+        default_res = {
+            "message": user_input,
+            "time": None,
+            "start_date": None,
+            "needs_clarification": True,
+            "clarification_type": "time_or_location"
+        }
+        
+        res = ""
+        try:
+            if self.mode == "cloud":
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ]
+                res = self._cloud_chat(messages, reasoning_effort="low")
+            else:
+                full_prompt = f"{system_prompt}\n\nUser Input: {user_input}"
+                res = self._local_generate(
+                    full_prompt,
+                    options={"temperature": 0.0, "num_predict": 128}
+                )
+            
+            # Safe JSON extraction from LLM response
+            cleaned_res = res.strip()
+            if "```json" in cleaned_res:
+                cleaned_res = cleaned_res.split("```json")[1].split("```")[0].strip()
+            elif "```" in cleaned_res:
+                cleaned_res = cleaned_res.split("```")[1].split("```")[0].strip()
+            
+            # Regex to find first complete bracket structure
+            import re
+            match = re.search(r'\{.*?\}', cleaned_res, re.DOTALL)
+            if match:
+                cleaned_res = match.group(0)
+            
+            parsed = json.loads(cleaned_res)
+            print(f"[{get_timestamp()}] [Brain parse_reminder_data] successfully parsed: {parsed}")
+            return parsed
+        except Exception as e:
+            print(f"⚠️ [Brain parse_reminder_data] Failed to parse reminder data: {e}. Raw response: {res!r}")
+            return default_res

@@ -46,6 +46,13 @@ def get_all_reminders():
     } for r in rows]
 
 def add_reminder(message, times, days_of_week='0,1,2,3,4,5,6', start_date=None, end_date=None, is_active=True):
+    if start_date and start_date == end_date:
+        import datetime
+        try:
+            dt_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+            days_of_week = str((dt_obj.weekday() + 1) % 7)
+        except Exception:
+            pass
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''
@@ -56,6 +63,13 @@ def add_reminder(message, times, days_of_week='0,1,2,3,4,5,6', start_date=None, 
     conn.close()
 
 def update_reminder(reminder_id, message, times, days_of_week, start_date, end_date, is_active):
+    if start_date and start_date == end_date:
+        import datetime
+        try:
+            dt_obj = datetime.datetime.strptime(start_date, "%Y-%m-%d")
+            days_of_week = str((dt_obj.weekday() + 1) % 7)
+        except Exception:
+            pass
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''

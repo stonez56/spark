@@ -16,10 +16,11 @@ class SparkSTT:
         audio_float32 = audio_data.astype(np.float32) / 32768.0
         
         print("Transcribing audio...")
-        # 加上繁體 initial_prompt，強烈引導 Whisper 輸出台灣繁體中文
         segments, info = self.model.transcribe(
             audio_float32, 
-            beam_size=5,
+            beam_size=3,
+            vad_filter=True,
+            vad_parameters=dict(min_silence_duration_ms=500),
             initial_prompt="以下是繁體中文的對話，使用台灣繁體字形，避免簡體字。"
         )
         
@@ -48,6 +49,11 @@ class SparkSTT:
             
             # 清理因過濾殘留的標點符號與空白
             cleaned_text = cleaned_text.strip(" ，。,澎、！!？? \t\n")
+            
+            # 過濾語音末尾的幻覺數字「４」或「4」（非與其他數字相連、且非時間/日期後置詞時）
+            import re
+            cleaned_text = re.sub(r'(?<!\d)(?<![一二三四五六七八九十百分點時日月年])([4４])$', '', cleaned_text.strip()).strip()
+            
             return cleaned_text
         except Exception:
             return raw_text
