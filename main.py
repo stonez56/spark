@@ -1,5 +1,10 @@
 import os
 import warnings
+
+# Environment configurations for Raspberry Pi 5 & clean logging
+os.environ["GPIOZERO_PIN_FACTORY"] = "lgpio"
+os.environ["ORT_LOGGING_LEVEL"] = "3"
+os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")

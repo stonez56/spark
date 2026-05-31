@@ -10,8 +10,11 @@ __pycache__/
 .venv/
 
 # AI models (ONNX, Whisper, Piper) - large binary files
-*.onnx
-models/
+en_US*.onnx
+en_US*.json
+zh_CN*.onnx
+zh_CN*.json
+g2pW/g2pw.onnx
 
 # Zero-latency audio cache folder
 audio_cache_data/
