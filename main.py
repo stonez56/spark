@@ -213,15 +213,15 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 last_active_time = time.time()
                 has_spoken = False
                 
-                # 讀取並計算自適應靜音斷句超時時間
+                # 讀取並計算自適應靜音斷句超時時間 (更緊湊以降低延遲)
                 import settings_manager
                 speed_mode = settings_manager.load_settings().get("speaking_speed", "normal")
                 if speed_mode == "fast":
-                    active_silence_timeout = 1.2
+                    active_silence_timeout = 0.7
                 elif speed_mode == "slow":
-                    active_silence_timeout = 2.5
-                else:
                     active_silence_timeout = 1.8
+                else:
+                    active_silence_timeout = 1.2
                 
                 oww_model.reset()
                 continue # Skip audio queue processing this tick
@@ -437,15 +437,15 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                             last_active_time = time.time()
                             has_spoken = False
                             
-                            # 讀取並計算自適應靜音斷句超時時間
+                            # 讀取並計算自適應靜音斷句超時時間 (更緊湊以降低延遲)
                             import settings_manager
                             speed_mode = settings_manager.load_settings().get("speaking_speed", "normal")
                             if speed_mode == "fast":
-                                active_silence_timeout = 1.2
+                                active_silence_timeout = 0.7
                             elif speed_mode == "slow":
-                                active_silence_timeout = 2.5
-                            else:
                                 active_silence_timeout = 1.8
+                            else:
+                                active_silence_timeout = 1.2
                             break
                     if detected_trigger:
                         break
@@ -483,6 +483,12 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                     sm.transition(SparkState.THINKING)
                     state_queue.put(SparkState.THINKING)
 
+                    # Play generic thinking filler immediately at 0ms (before ASR transcription) to mask latency!
+                    import audio_cache
+                    filler_bytes = audio_cache.get_random_filler("chat")
+                    if filler_bytes:
+                        tts_queue.put(filler_bytes)
+
                     full_audio = np.concatenate(stt_buffer)
                     transcription = stt.transcribe(full_audio)
                     print(f"[{get_timestamp()}] User: {transcription}")
@@ -504,12 +510,6 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         stt_buffer = []
                         has_spoken = False
                         continue
-
-                    # Play generic thinking filler immediately at 0ms to hide routing/LLM generation latency
-                    import audio_cache
-                    filler_bytes = audio_cache.get_random_filler("chat")
-                    if filler_bytes:
-                        tts_queue.put(filler_bytes)
 
                     response = "..."
                     if transcription:

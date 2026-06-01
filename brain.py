@@ -460,126 +460,98 @@ class OllamaBrain:
             
         if any(w in user_input_lower for w in ["跌倒", "痛", "救命", "暈", "不舒服"]):
             return "emergency"
-        if any(w in user_input_lower for w in ["血壓", "藥", "血糖"]):
-            return "health_query"
-        if any(w in user_input_lower for w in ["體溫", "溫度", "發燒", "量溫度"]):
-            return "temp_analysis"
-        if any(w in user_input_lower for w in ["這是什麼", "这是什么", "拍張照", "拍张照", "照張相", "照张相", "看這裡", "看这里", "看這", "看这", "拍照片", "拍個照", "拍个照", "照片", "相片"]):
-            return "take_photo"
-        if any(w in user_input_lower for w in ["切換模型", "切換大腦", "換大腦", "換模型", "變聰明一點", "換個大腦", "換個模型"]):
-            return "swap_model"
-        
-        # --- Phase 1.5: Date & Time Interceptor ---
-        normalized_input = clean_traditional_chinese(user_input_lower)
-        if ("星期" in normalized_input or "禮拜" in normalized_input) and ("幾" in normalized_input or "几" in user_input_lower):
-            return "datetime"
-        if "幾點" in normalized_input or "現在時間" in normalized_input or "現在的時間" in normalized_input:
-            return "datetime"
-        if "幾號" in normalized_input or "今天日期" in normalized_input or "幾月幾" in normalized_input or "今天幾月" in normalized_input or "今天幾號" in normalized_input or "幾月幾號" in normalized_input:
-            return "datetime"
-            
-        # 0ms 強大關鍵字攔截機制：日常招呼、吃飯互動與專業比較
-        if any(w in normalized_input for w in ["你在做什麼", "你在幹嘛", "做什麼", "在幹嘛", "哈囉", "你好", "早安", "早啊"]):
-            return "chat"
-        if any(w in normalized_input for w in ["吃飯", "吃罐罐", "點心", "過來"]):
-            return "pet_cat"
-        if any(w in normalized_input for w in ["訂閱", "推薦", "比較好", "哪個好", "致富", "0050", "零零五零", "理財", "投資"]):
-            return "search_web"
-
-        if any(w in user_input_lower for w in ["天氣", "股票", "股市", "新聞", "匯率", "台積電"]) and not any(w in user_input_lower for w in ["幾點", "星期", "幾號"]):
-            return "search_web"
-        if any(w in user_input_lower for w in ["散步", "起床", "睡醒", "睡覺"]):
-            return "daily_checkin"
-        if any(w in user_input_lower for w in ["以前", "小時候", "做工的時候", "年輕的時候"]):
-            return "reminiscence"
-        if any(w in user_input_lower for w in ["有乖乖", "我有", "走了", "步"]):
-            return "praise_affirmation"
-        if any(w in user_input_lower for w in ["寂寞", "孤單", "沒人", "陪我"]):
-            return "emotional_support"
-        if any(w in user_input_lower for w in ["摸摸", "乖貓", "可愛", "好乖"]):
-            return "pet_cat"
             
         # --- Phase 2: Fallback Intent Routing ---
-        system_prompt = """你是一個意圖辨識助手。請根據使用者的輸入，從以下動作中選擇一個最合適的，並只回傳 JSON 格式：{"action": "動作名稱"}。
+        system_prompt = """你是一個精準的意圖辨識助手。請分析使用者的輸入，並只回傳動作名稱本身，絕對不要包含任何其他文字、JSON 格式、標點符號、空格或任何多餘的解釋！
 
 可選動作列表：
-- add_reminder: 當使用者主動要求系統在未來設定一個提醒、鬧鐘、排程、定時器或備忘事件（例如：提醒我下午四點半喝水、明天早上八點叫我起床、4點50分提醒我吃藥、幫我記一下買雞蛋、幫我記住開會時間）。注意：必須有明確的「主動要求提醒」或「命令記錄」口吻。如果只是單純詢問日期或時間，絕對不能歸入此項！
-- datetime: 當使用者詢問目前的日期、時間、星期幾、今年是哪一年（例如：今天幾月幾號、現在幾點了、今天是星期幾、今天集合集號）。
-- search_web: 當使用者詢問天氣、股市、新聞、比較、推薦、專業知識或需要聯網查詢的資訊（例如：訂閱哪個AI好、0050怎麼買、今天天氣）。
-- chat: 一般日常對話、問候、閒聊、你在做什麼（例如：你在做什麼、你好、哈囉、今天天氣真好）。
-- pet_cat: 當使用者稱讚貓咪、想摸貓咪、餵食或對貓咪示好（例如：過來吃飯、好乖、摸摸、你真可愛）。
-- emotional_support: 當使用者表達傷心、寂寞、難過、想哭或心情不好。
-- reminiscence: 當使用者主動提起過去的回記、小時候、以前的事情。
+- add_reminder: 使用者要求設定提醒、鬧鐘、排程、計時器（例如：提醒我明天要洗車、明早八點叫我起床、幫我記一下買雞蛋）。必須有明確的主動要求。
+- datetime: 詢問目前的日期、時間、星期幾、今年是哪一年（例如：今天幾月幾號、現在幾點了、今天是星期幾）。
+- search_web: 詢問天氣、股市、新聞、比較、推薦或需要聯網查詢的專業知識（例如：訂閱哪個AI好、0050怎麼買、今天天氣）。
+- chat: 一般日常對話、問候、閒聊、你在做什麼（例如：你好、哈囉、你在幹嘛）。
+- pet_cat: 稱讚貓咪、想摸貓咪、餵食或對貓咪示好（例如：好乖、摸摸、你真可愛、過來吃罐罐）。
+- emotional_support: 表達傷心、寂寞、難過、心情不好。
+- reminiscence: 主動提起過去的回憶、小時候、以前的事情。
 - temp_analysis: 詢問體溫、發燒或量體溫。
 - emergency: 跌倒、受傷、求救、身體極度不舒服。
 - health_query: 詢問血壓、血糖、吃藥等日常健康問題。
 - daily_checkin: 關於睡覺、起床、出門散步等日常作息。
-- take_photo: 拍張照、看這裡。
+- take_photo: 拍張照、看這裡、照張相。
 - swap_model: 切換模型或大腦。
 
-範例：
-- "你在做什麼" -> {"action": "chat"}
-- "過來吃飯喔" -> {"action": "pet_cat"}
-- "訂閱Google AI Pro比較好還是訂閱其他的" -> {"action": "search_web"}
-- "我覺得很寂寞" -> {"action": "emotional_support"}
-- "提醒我下午四點半喝水" -> {"action": "add_reminder"}
-- "幫我記一下買雞蛋" -> {"action": "add_reminder"}
-- "今天幾月幾號" -> {"action": "datetime"}
-- "現在幾點了" -> {"action": "datetime"}
-- "今天集合集號" -> {"action": "datetime"}
-
-回覆規範：請「只」輸出 JSON 字串，不要包含任何其他文字與解釋。"""
+回覆規範：請「只」輸出動作名稱本身（例如：chat 或 add_reminder），絕對不要有其他字！"""
         
         import settings_manager
         settings = settings_manager.load_settings()
         self.routing_mode = settings.get("routing_mode", "local")
         
+        allowed_actions = [
+            "add_reminder", "datetime", "search_web", "chat", "pet_cat",
+            "emotional_support", "reminiscence", "temp_analysis", "emergency",
+            "health_query", "daily_checkin", "take_photo", "swap_model"
+        ]
+
         if self.routing_mode == "cloud":
             print("Using Cloud LLM for intent routing...")
             try:
                 messages = [
                     {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_input}
+                    {'role': 'user', 'content': f"請對這句話做分類：'{user_input}'\n只輸出單詞分類名稱："}
                 ]
-                content = self._cloud_chat(messages, reasoning_effort="high")
+                content = self._cloud_chat(messages, reasoning_effort="low")
+                cleaned_action = content.strip().lower()
+                if cleaned_action in allowed_actions:
+                    return cleaned_action
+                
+                # Fuzzy fallback matching
+                for act in allowed_actions:
+                    if act in cleaned_action:
+                        return act
+                        
                 import json
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0].strip()
-                parsed = json.loads(content.strip())
-                return parsed.get("action", "chat")
+                import re
+                match = re.search(r'\{.*?\}', content, re.DOTALL)
+                if match:
+                    parsed = json.loads(match.group(0))
+                    return parsed.get("action", "chat")
             except Exception as e:
                 print(f"Cloud intent routing fallback error: {e}")
-                # 若雲端失敗，繼續嘗試本地模型
 
-        print("Falling back to local LLM for intent routing...")
+        print("Using local LLM (gemma3:1b) for intent routing...")
         try:
-            merged_prompt = f"{system_prompt}\n\nUser Input: {user_input}"
+            intent_model = "gemma3:1b"
+            merged_prompt = f"{system_prompt}\n\nUser Input: {user_input}\n請只回傳一個單詞（動作名稱）："
+            
             response = ollama.chat(
-                model=LOCAL_TEXT_MODEL,
+                model=intent_model,
                 messages=[
                     {'role': 'user', 'content': merged_prompt}
-                ]
+                ],
+                options={
+                    "temperature": 0.0,
+                    "num_predict": 10,
+                    "repeat_penalty": 1.0
+                }
             )
             content = response['message']['content'].strip()
+            print(f"[Local Intent LLM raw output]: {content!r}")
             
-            # 手動過濾可能的 Markdown 標記，因為我們移除了 format='json'
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
+            cleaned_action = content.strip().lower()
+            if cleaned_action in allowed_actions:
+                return cleaned_action
                 
+            for act in allowed_actions:
+                if act in cleaned_action:
+                    return act
+                    
             import json
             import re
-            # 嘗試找尋第一個 { ... }
             match = re.search(r'\{.*?\}', content, re.DOTALL)
             if match:
                 parsed = json.loads(match.group(0))
-            else:
-                parsed = json.loads(content)
+                return parsed.get("action", "chat")
                 
-            return parsed.get("action", "chat")
+            return "chat"
         except Exception as e:
             print(f"Intent routing fallback error: {e}")
             return "chat"
