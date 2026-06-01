@@ -162,7 +162,6 @@ class OllamaBrain:
             settings = settings_manager.load_settings()
             
             if mode == "cloud":
-                from config import CLOUD_TEXT_MODEL
                 self.text_model = CLOUD_TEXT_MODEL
                 self._init_cloud_client()
                 
@@ -177,7 +176,6 @@ class OllamaBrain:
                     except Exception as e:
                         print(f"Error offloading Ollama models: {e}")
             else:
-                from config import LOCAL_TEXT_MODEL
                 self.text_model = LOCAL_TEXT_MODEL
                 
                 # Pre-load/warm up local model
