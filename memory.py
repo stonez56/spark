@@ -37,18 +37,38 @@ class MimoMemory:
 
         # Save to ChromaDB (Embed the user input + response for context)
         document_text = f"User asked: {user_input} | Mimo replied: {spark_response}"
-        self.collection.add(
-            documents=[document_text],
-            metadatas=[{"timestamp": timestamp}],
-            ids=[interaction_id]
-        )
+        try:
+            self.collection.add(
+                documents=[document_text],
+                metadatas=[{"timestamp": timestamp}],
+                ids=[interaction_id]
+            )
+        except Exception as e:
+            # Self-healing: if collection does not exist, recreate it and retry!
+            print(f"[Memory] Collection might be stale or missing: {e}. Re-initializing collection...")
+            try:
+                self.collection = self.chroma_client.get_or_create_collection(name="mimo_conversations")
+                self.collection.add(
+                    documents=[document_text],
+                    metadatas=[{"timestamp": timestamp}],
+                    ids=[interaction_id]
+                )
+            except Exception as ex:
+                print(f"❌ [Memory] Failed to self-heal ChromaDB add: {ex}")
         print(f"Interaction saved to memory.")
 
     def retrieve_context(self, current_input, n_results=3):
         """Retrieve relevant past interactions based on semantic similarity."""
         try:
-            if self.collection.count() == 0:
-                return ""
+            # Self-healing: check if collection exists/valid
+            try:
+                if self.collection.count() == 0:
+                    return ""
+            except Exception:
+                # Re-fetch collection if count() fails due to stale reference
+                self.collection = self.chroma_client.get_or_create_collection(name="mimo_conversations")
+                if self.collection.count() == 0:
+                    return ""
                 
             results = self.collection.query(
                 query_texts=[current_input],

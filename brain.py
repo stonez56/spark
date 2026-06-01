@@ -306,7 +306,6 @@ class OllamaBrain:
             if settings.get("offload_local_llm", True):
                 print(f"[Cloud Mode] Offloading local models '{LOCAL_TEXT_MODEL}' and '{LOCAL_VISION_MODEL}' from Ollama memory...")
                 try:
-                    import ollama
                     ollama.generate(model=LOCAL_TEXT_MODEL, keep_alive=0)
                     ollama.generate(model=LOCAL_VISION_MODEL, keep_alive=0)
                     print("[Cloud Mode] Local models offloaded successfully.")
