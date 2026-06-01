@@ -260,9 +260,20 @@ async def run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, trans
     tts_task = asyncio.create_task(monitor_tts_queue())
     transcript_task = asyncio.create_task(monitor_transcript_queue())
 
-    await asyncio.gather(server_task, state_task, tts_task, transcript_task)
+    try:
+        await asyncio.gather(server_task, state_task, tts_task, transcript_task)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        # Suppress noisy multiprocessing queue errors or bad descriptor errors during abrupt teardown
+        logging.debug(f"[Web UI] Loop exception during teardown: {e}")
 
 
 def run_ui(state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue):
     """Entry point for the UI process"""
-    asyncio.run(run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue))
+    try:
+        asyncio.run(run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue))
+    except (KeyboardInterrupt, SystemExit):
+        pass  # Graceful exit on user cancellation or process exit
+    except Exception as e:
+        print(f"[Web UI] Server process exception: {e}")
