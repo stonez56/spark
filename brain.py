@@ -594,18 +594,42 @@ class OllamaBrain:
             is_datetime_query = True
 
         if is_datetime_query:
-            from datetime import datetime
+            from datetime import datetime, timedelta
             now = datetime.now()
-            roc_year = now.year - 1911
-            weekday_str = ["一", "二", "三", "四", "五", "六", "日"][now.weekday()]
+            
+            # 解析相對日期偏移量
+            offset = 0
+            date_prefix = "今天"
+            if "明天" in normalized_prompt:
+                offset = 1
+                date_prefix = "明天"
+            elif "後天" in normalized_prompt:
+                offset = 2
+                date_prefix = "後天"
+            elif "大後天" in normalized_prompt:
+                offset = 3
+                date_prefix = "大後天"
+            elif "昨天" in normalized_prompt:
+                offset = -1
+                date_prefix = "昨天"
+            elif "前天" in normalized_prompt:
+                offset = -2
+                date_prefix = "前天"
+            elif "大前天" in normalized_prompt:
+                offset = -3
+                date_prefix = "大前天"
+                
+            target_date = now + timedelta(days=offset)
+            roc_year = target_date.year - 1911
+            weekday_str = ["一", "二", "三", "四", "五", "六", "日"][target_date.weekday()]
             
             print(f"[{get_timestamp()}] [Fast Datetime Interceptor] Intercepted query '{prompt}' - returning locally in 0ms...")
             if "幾點" in normalized_prompt or "時間" in normalized_prompt:
                 return f"{patient_name}，現在時間是 {now.strftime('%H 點 %M 分')} 喵～ 哼，{patient_name}問時間是想放罐罐了嗎？"
             elif "星期" in normalized_prompt or "禮拜" in normalized_prompt:
-                return f"今天是星期 {weekday_str} 喵～ {patient_name} 別忘了今天也要乖乖陪本喵喔！"
+                return f"{date_prefix}是星期 {weekday_str} 喵～ {patient_name} 別忘了要乖乖陪本喵喔！"
             else:
-                return f"今天是中華民國 {roc_year} 年 {now.month} 月 {now.day} 日喵～ 哼，{patient_name}記住了嗎？"
+                return f"{date_prefix}是中華民國 {roc_year} 年 {target_date.month} 月 {target_date.day} 日喵～ 哼，{patient_name}記住了嗎？"
 
         lang = self._detect_language(prompt)
         if lang == 'zh':
