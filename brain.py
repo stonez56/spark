@@ -158,17 +158,41 @@ class OllamaBrain:
         """Switch between 'local' and 'cloud' LLM mode at runtime."""
         if mode in ["local", "cloud"]:
             self.mode = mode
+            import settings_manager
+            settings = settings_manager.load_settings()
+            
             if mode == "cloud":
                 from config import CLOUD_TEXT_MODEL
                 self.text_model = CLOUD_TEXT_MODEL
                 self._init_cloud_client()
+                
+                # Check if offload option is enabled
+                if settings.get("offload_local_llm", True):
+                    print(f"[Brain Mode] Offloading local models '{LOCAL_TEXT_MODEL}' and '{LOCAL_VISION_MODEL}' from Ollama memory...")
+                    try:
+                        import ollama
+                        ollama.generate(model=LOCAL_TEXT_MODEL, keep_alive=0)
+                        ollama.generate(model=LOCAL_VISION_MODEL, keep_alive=0)
+                        print("[Brain Mode] Local models offloaded successfully.")
+                    except Exception as e:
+                        print(f"Error offloading Ollama models: {e}")
             else:
                 from config import LOCAL_TEXT_MODEL
                 self.text_model = LOCAL_TEXT_MODEL
+                
+                # Pre-load/warm up local model
+                print(f"[Brain Mode] Pre-loading local model '{self.text_model}'...")
+                try:
+                    import ollama
+                    if self.text_model == "gemma4:e2b":
+                        ollama.chat(model=self.text_model, messages=[{'role': 'user', 'content': 'Hello'}])
+                    else:
+                        ollama.generate(model=self.text_model, prompt="Hello", keep_alive=-1, options={"num_predict": 1})
+                    print("[Brain Mode] Local model warmed up.")
+                except Exception as e:
+                    print(f"Error warming up local model: {e}")
             
             # Persist mode change in settings.json so it survives restarts
-            import settings_manager
-            settings = settings_manager.load_settings()
             if settings.get("routing_mode") != mode:
                 settings["routing_mode"] = mode
                 settings_manager.save_settings(settings)
@@ -279,7 +303,19 @@ class OllamaBrain:
 
     def warmup(self):
         if self.mode == "cloud":
-            print(f"[Cloud Mode] No warmup needed — using OpenRouter API.")
+            import settings_manager
+            settings = settings_manager.load_settings()
+            if settings.get("offload_local_llm", True):
+                print(f"[Cloud Mode] Offloading local models '{LOCAL_TEXT_MODEL}' and '{LOCAL_VISION_MODEL}' from Ollama memory...")
+                try:
+                    import ollama
+                    ollama.generate(model=LOCAL_TEXT_MODEL, keep_alive=0)
+                    ollama.generate(model=LOCAL_VISION_MODEL, keep_alive=0)
+                    print("[Cloud Mode] Local models offloaded successfully.")
+                except Exception as e:
+                    print(f"Error offloading Ollama models: {e}")
+            else:
+                print(f"[Cloud Mode] No warmup needed — using OpenRouter API.")
             return
         print(f"Warming up text model '{self.text_model}' and vision model '{self.vision_model}'...")
         try:

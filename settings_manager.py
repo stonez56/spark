@@ -7,7 +7,8 @@ DEFAULT_SETTINGS = {
     "patient_name": "主人",
     "caregiver_name": "Mimo",
     "speaking_speed": "normal",
-    "routing_mode": "local"
+    "routing_mode": "local",
+    "offload_local_llm": True
 }
 
 def load_settings():

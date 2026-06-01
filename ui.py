@@ -155,6 +155,15 @@ async def update_settings(payload: dict):
             settings["routing_mode"] = new_routing_mode
             if hasattr(app.state, 'mode_queue'):
                 app.state.mode_queue.put(new_routing_mode)
+                
+    if "offload_local_llm" in payload:
+        new_offload = bool(payload["offload_local_llm"])
+        if new_offload != settings.get("offload_local_llm"):
+            settings["offload_local_llm"] = new_offload
+            # If offloading is turned ON while active mode is cloud, trigger offload immediately
+            if new_offload and settings.get("routing_mode", "local") == "cloud":
+                if hasattr(app.state, 'command_queue'):
+                    app.state.command_queue.put({'type': 'offload_ollama'})
         
     settings_manager.save_settings(settings)
     

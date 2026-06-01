@@ -342,6 +342,17 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 import audio_cache
                 audio_cache.regenerate(tts)
                 continue
+            elif cmd['type'] == 'offload_ollama':
+                from config import LOCAL_TEXT_MODEL, LOCAL_VISION_MODEL
+                print(f"[System Command] Offloading local models '{LOCAL_TEXT_MODEL}' and '{LOCAL_VISION_MODEL}' from Ollama memory...")
+                try:
+                    import ollama
+                    ollama.generate(model=LOCAL_TEXT_MODEL, keep_alive=0)
+                    ollama.generate(model=LOCAL_VISION_MODEL, keep_alive=0)
+                    print("[System Command] Local models offloaded successfully.")
+                except Exception as e:
+                    print(f"Error offloading Ollama models: {e}")
+                continue
             elif cmd['type'] == 'wakeup':
                 print("\n[System] Mimo detected owner's face and woke up!")
                 sm.transition(SparkState.ATTENTIVE)

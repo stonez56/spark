@@ -225,6 +225,10 @@
                 <option value="slow">🐢 慢速語者 (2.5 秒靜音自動斷句)</option>
             </select>
         </div>
+        <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-top: 10px; margin-bottom: 15px;">
+            <input type="checkbox" id="offload-local-llm" style="width: 18px; height: 18px; cursor: pointer; accent-color: #00ffff;">
+            <label for="offload-local-llm" style="cursor: pointer; font-size: 14px; color: #ddd; user-select: none;">☁️ 雲端模式下主動釋放本地 Ollama 資源 (節省 Pi 5 算力與記憶體)</label>
+        </div>
         <div style="display:flex; align-items:center; gap:10px; margin-top: 15px;">
             <button class="btn-primary" id="save-settings-btn" onclick="saveSettings()">儲存設定</button>
             <div id="settings-spinner" class="spinner"></div>
@@ -334,6 +338,7 @@
             const patient = document.getElementById('patient-name').value;
             const caregiver = document.getElementById('caregiver-name').value;
             const speed = document.getElementById('speaking-speed').value;
+            const offload = document.getElementById('offload-local-llm').checked;
             
             await fetch('/api/settings', {
                 method: 'POST',
@@ -342,7 +347,8 @@
                     patient_name: patient,
                     caregiver_name: caregiver,
                     speaking_speed: speed,
-                    routing_mode: mode
+                    routing_mode: mode,
+                    offload_local_llm: offload
                 })
             });
         } catch(e) { console.error(e); }
@@ -355,6 +361,7 @@
             document.getElementById('patient-name').value = data.patient_name || '';
             document.getElementById('caregiver-name').value = data.caregiver_name || '';
             document.getElementById('speaking-speed').value = data.speaking_speed || 'normal';
+            document.getElementById('offload-local-llm').checked = data.offload_local_llm !== false;
             updateRoutingModeButtons(data.routing_mode || 'local');
         } catch(e) { console.error(e); }
     }
@@ -362,6 +369,7 @@
         const patient = document.getElementById('patient-name').value;
         const caregiver = document.getElementById('caregiver-name').value;
         const speed = document.getElementById('speaking-speed').value;
+        const offload = document.getElementById('offload-local-llm').checked;
         
         const btn = document.getElementById('save-settings-btn');
         const spinner = document.getElementById('settings-spinner');
@@ -382,7 +390,8 @@
                     patient_name: patient,
                     caregiver_name: caregiver,
                     speaking_speed: speed,
-                    routing_mode: currentRoutingMode
+                    routing_mode: currentRoutingMode,
+                    offload_local_llm: offload
                 })
             });
             await new Promise(r => setTimeout(r, 5000));
