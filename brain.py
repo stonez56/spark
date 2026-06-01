@@ -517,9 +517,9 @@ class OllamaBrain:
             except Exception as e:
                 print(f"Cloud intent routing fallback error: {e}")
 
-        print("Using local LLM (gemma3:1b) for intent routing...")
+        print("Using local LLM (llama3.2:3b) for intent routing...")
         try:
-            intent_model = "gemma3:1b"
+            intent_model = "llama3.2:3b"
             merged_prompt = f"{system_prompt}\n\nUser Input: {user_input}\n請只回傳一個單詞（動作名稱）："
             
             response = ollama.chat(
