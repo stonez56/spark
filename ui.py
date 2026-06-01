@@ -186,7 +186,7 @@ async def reset_db_endpoint():
 
 async def broadcast(message: dict):
     dead = set()
-    for client in connected_clients:
+    for client in list(connected_clients):
         try:
             await client.send_text(json.dumps(message))
         except Exception:
@@ -205,7 +205,7 @@ async def broadcast_transcript(user_text: str, spark_text: str):
 
 
 async def broadcast_audio(audio_bytes: bytes):
-    for client in connected_clients:
+    for client in list(connected_clients):
         try:
             await client.send_bytes(audio_bytes)
         except Exception as e:

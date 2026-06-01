@@ -85,12 +85,7 @@ def reset_database():
     # 4. Reset Personalization Settings (settings.json) to defaults
     try:
         import settings_manager
-        default_settings = {
-            "patient_name": "主人",
-            "caregiver_name": "Mimo",
-            "speaking_speed": "normal",
-            "routing_mode": "local"
-        }
+        default_settings = settings_manager.DEFAULT_SETTINGS.copy()
         settings_manager.save_settings(default_settings)
         print("✅ [Reset DB] Personalization settings (settings.json) reset to default clean values.")
     except Exception as e:
