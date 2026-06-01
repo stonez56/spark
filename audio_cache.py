@@ -136,6 +136,7 @@ def initialize(tts):
     when the name changes. Static filler files are always preserved and reused.
     """
     global _CACHE, _PURR_PAD
+    os.makedirs(CACHE_DIR, exist_ok=True)
     purr_fpath = os.path.join(CACHE_DIR, "purr_pad.pcm")
     if os.path.exists(purr_fpath):
         print("[AudioCache] Loaded cached purring sound effect (呼嚕聲) from disk.")
