@@ -129,6 +129,53 @@ def _save_meta(data: dict):
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def generate_authentic_cat_purr(duration_secs: float, sample_rate: int = 22050) -> bytes:
+    """
+    Mathematically synthesise a highly realistic, soothing, low-frequency cat purr/breathing sound.
+    Uses amplitude modulation, laryngeal gating simulation, and low-pass filtered noise.
+    """
+    t = np.linspace(0, duration_secs, int(sample_rate * duration_secs), endpoint=False)
+    
+    # 1. Fundamental hum (Low frequency 26.2 Hz matching typical cat laryngeal oscillation)
+    fundamental_freq = 26.2
+    fundamental = np.sin(2 * np.pi * fundamental_freq * t)
+    harmonic1 = 0.4 * np.sin(2 * np.pi * (fundamental_freq * 2) * t)
+    harmonic2 = 0.15 * np.sin(2 * np.pi * (fundamental_freq * 3) * t)
+    hum = fundamental + harmonic1 + harmonic2
+    
+    # 2. Laryngeal muscle gating modulation (26 Hz amplitude modulation / chatter tremolo)
+    gating_mod = 0.5 * (1.0 + np.sin(2 * np.pi * 26.0 * t))
+    purr_carrier = hum * gating_mod
+    
+    # 3. Soft, warm breathing airflow (low-pass filtered white noise)
+    noise = np.random.normal(0, 0.1, len(t))
+    # Simple low-pass filter (exponential moving average) to create deep brownian-like rumble
+    alpha = 0.05
+    filtered_noise = np.zeros_like(noise)
+    current = 0.0
+    for i in range(len(noise)):
+        current = alpha * noise[i] + (1 - alpha) * current
+        filtered_noise[i] = current
+        
+    # Combine purr carrier and warm air rumble
+    raw_purr = purr_carrier + 0.12 * filtered_noise
+    
+    # 4. Respiration (Breathing) Cycle (Inhale/Exhale modulation at 0.3 Hz, ~3.3 sec per breath)
+    breath_cycle = 0.3
+    breath_envelope = 0.5 + 0.5 * np.sin(2 * np.pi * breath_cycle * t)
+    
+    # Apply breath envelope to purr
+    purr_signal = raw_purr * breath_envelope
+    
+    # 5. Normalise and scale to comfortable, low-volume purring level (-12dB to -18dB)
+    purr_signal = purr_signal / np.max(np.abs(purr_signal))
+    purr_signal = purr_signal * 0.18  # Soft, intimate volume
+    
+    # Convert to 16-bit PCM
+    pcm_data = (purr_signal * 32767).astype(np.int16)
+    return pcm_data.tobytes()
+
+
 def initialize(tts):
     """
     Load filler audio cache from disk granularly.
@@ -138,13 +185,23 @@ def initialize(tts):
     global _CACHE, _PURR_PAD
     os.makedirs(CACHE_DIR, exist_ok=True)
     purr_fpath = os.path.join(CACHE_DIR, "purr_pad.pcm")
+    
+    # Self-healing: if cached purr pad is the old Piper TTS format (not matching our 154350 byte DSP size), delete it
+    expected_size = 154350
+    if os.path.exists(purr_fpath) and os.path.getsize(purr_fpath) != expected_size:
+        print("[AudioCache] Overwriting obsolete human-voice purr file with premium natural DSP cat rumble.")
+        try:
+            os.remove(purr_fpath)
+        except Exception:
+            pass
+
     if os.path.exists(purr_fpath):
         print("[AudioCache] Loaded cached purring sound effect (呼嚕聲) from disk.")
         with open(purr_fpath, "rb") as f:
             _PURR_PAD = f.read()
     else:
-        print("[AudioCache] Generating purring sound effect (呼嚕聲)...")
-        _PURR_PAD = tts.synthesize("呼嚕呼嚕... 呼嚕呼嚕... 呼嚕呼嚕... 呼嚕呼嚕...")
+        print("[AudioCache] Generating mathematically synthesised natural cat purring/breathing sound effect...")
+        _PURR_PAD = generate_authentic_cat_purr(3.5)
         with open(purr_fpath, "wb") as f:
             f.write(_PURR_PAD)
         
