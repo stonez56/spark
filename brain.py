@@ -519,15 +519,15 @@ class OllamaBrain:
             return "emotional_support"
             
         # 10. 健康問詢 (health_query)
-        if re.search(r"(血壓|血糖|吃藥|藥丸|吃藥了沒|高血壓|糖尿病|感冒|吃過藥)", normalized_input):
+        if re.search(r"(量血壓|量血糖|該吃藥|要吃藥|吃藥了沒|有吃藥|高血壓治療|糖尿病控制)", normalized_input):
             return "health_query"
             
         # 11. 日常起居 (daily_checkin)
-        if re.search(r"(睡覺|起床|出門|散步|去睡了|去睡覺|去散步)", normalized_input):
+        if re.search(r"(去睡了|去睡覺|去散步|準備睡覺|剛起床|要出門)", normalized_input):
             return "daily_checkin"
             
         # 12. 網頁搜尋 (search_web)
-        if re.search(r"(天氣|股市|新聞|股價|氣溫|氣候|推薦|多少錢|什麼是|解釋|如何|為什麼|為何|點買)", normalized_input):
+        if re.search(r"(天氣預報|天氣如何|會下雨嗎|今日股市|今日新聞|最新股價|多少錢|什麼是|怎麼買|如何使用|為什麼要|解釋一下)", normalized_input):
             return "search_web"
 
         # ─── Phase 2: Fallback Intent Routing ───

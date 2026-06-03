@@ -50,9 +50,9 @@ class SparkSTT:
             # 清理因過濾殘留的標點符號與空白
             cleaned_text = cleaned_text.strip(" ，。,澎、！!？? \t\n")
             
-            # 過濾語音中無意義的孤立數字「0」或「０」幻覺（例如詞間停頓被 Whisper 誤判的零，排除小數與數字相連情況）
+            # 過濾語音中無意義的孤立全形「０」幻覺（例如詞間停頓被 Whisper 誤判的全形零，排除小數與數字相連情況，安全保留半形0）
             import re
-            cleaned_text = re.sub(r'\s*(?<![\d\.．點点\s])[0０](?![\s]*[\d\.．點点])\s*', '', cleaned_text).strip()
+            cleaned_text = re.sub(r'\s*(?<![\d\.．點点])[０](?![\s]*[\d\.．點点])\s*', '', cleaned_text).strip()
 
             # 過濾語音末尾的幻覺數字「４」或「4」（非與其他數字相連、且非時間/日期後置詞時）
             cleaned_text = re.sub(r'(?<!\d)(?<![一二三四五六七八九十百分點時日月年])([4４])$', '', cleaned_text.strip()).strip()
