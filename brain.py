@@ -45,7 +45,8 @@ S2T_DICT = {
     '铅': '鉛', '铜': '銅', '销': '銷', '锁': '鎖', '锅': '鍋', '错': '錯', '锚': '錨',
     '镜': '鏡', '长': '長', '门': '門', '闪': '閃', '闭': '閉', '问': '問', '闯': '闖',
     '闽': '閩', '阅': '閱', '阐': '闡', '阔': '闊', '阳': '陽', '阴': '陰', '阵': '陣',
-    '险': '險', '随': '隨', '隐': '隱', '难': '難', '风': '風', '飞': '飛', '馆': '館'
+    '险': '險', '随': '隨', '隐': '隱', '难': '難', '风': '風', '飞': '飛', '馆': '館',
+    '纽': '紐', '约': '約', '华': '華'
 }
 
 def clean_traditional_chinese(text: str) -> str:
@@ -473,20 +474,86 @@ class OllamaBrain:
         """
         Hybrid Intent Routing: 
         Phase 1: Rule-based matching for 0ms latency on obvious intents.
-        Phase 2: Fallback to local LLM (gemma3:1b) with highly optimized prompt for ambiguous queries.
+        Phase 2: Heuristic local routing (0ms) or LLM fallback based on settings.
         """
         print(f"Routing intent for: {user_input}")
         user_input_lower = user_input.lower()
         normalized_input = clean_traditional_chinese(user_input_lower)
         
-        # --- Phase 1: Fast Rule-Based Matching ---
+        # ─── Phase 1: Local Rule-Based Keyword/Regex Matching ───
+        
+        # 1. 鬧鐘/提醒
         if is_explicit_reminder_command(normalized_input):
             return "add_reminder"
             
-        if any(w in user_input_lower for w in ["跌倒", "痛", "救命", "暈", "不舒服"]):
+        # 2. 緊急情況 (emergency)
+        if any(w in normalized_input for w in ["跌倒", "痛", "救命", "暈", "不舒服", "受傷", "流血", "緊急", "醫院", "救護車", "難受"]):
             return "emergency"
             
-        # --- Phase 2: Fallback Intent Routing ---
+        # 3. 日期時間 (datetime)
+        if re.search(r"(現在幾點|時間幾點|現在時間|星期幾|禮拜幾|幾月幾號|幾號|今年是哪一年|日期|今天星期|今天幾月)", normalized_input):
+            return "datetime"
+            
+        # 4. 擼貓摸摸 (pet_cat)
+        if re.search(r"(摸摸|好乖|乖貓|真乖|真可愛|你真可愛|罐罐|餵你|吃罐罐|肉泥|親親|抱抱|擼貓|摸頭)", normalized_input):
+            return "pet_cat"
+            
+        # 5. 體溫分析 (temp_analysis)
+        if re.search(r"(體溫|量體溫|量溫度|測體溫|發燒|測量體溫|量測體溫|量一下溫度)", normalized_input):
+            return "temp_analysis"
+            
+        # 6. 拍照 (take_photo)
+        if re.search(r"(拍照|拍張照|看這裡|照相|照張相|幫我拍照|看一下這個)", normalized_input):
+            return "take_photo"
+            
+        # 7. 切換模型 (swap_model)
+        if re.search(r"(切換模型|換大腦|切換大腦|切換成本地|切換成雲端|換模型)", normalized_input):
+            return "swap_model"
+            
+        # 8. 往事回憶 (reminiscence)
+        if re.search(r"(回憶|小時候|年輕時|以前的|以前的事|過去的|還記得以前|回想)", normalized_input):
+            return "reminiscence"
+            
+        # 9. 情感陪伴 (emotional_support)
+        if re.search(r"(難過|傷心|心情不好|孤單|寂寞|想哭|好累|壓力大|無聊|委屈)", normalized_input):
+            return "emotional_support"
+            
+        # 10. 健康問詢 (health_query)
+        if re.search(r"(血壓|血糖|吃藥|藥丸|吃藥了沒|高血壓|糖尿病|感冒|吃過藥)", normalized_input):
+            return "health_query"
+            
+        # 11. 日常起居 (daily_checkin)
+        if re.search(r"(睡覺|起床|出門|散步|去睡了|去睡覺|去散步)", normalized_input):
+            return "daily_checkin"
+            
+        # 12. 網頁搜尋 (search_web)
+        if re.search(r"(天氣|股市|新聞|股價|氣溫|氣候|推薦|多少錢|什麼是|解釋|如何|為什麼|為何|點買)", normalized_input):
+            return "search_web"
+
+        # ─── Phase 2: Fallback Intent Routing ───
+        
+        import settings_manager
+        settings = settings_manager.load_settings()
+        self.routing_mode = settings.get("routing_mode", "local")
+        
+        # 預設：在雲端模式下允許 LLM 作為意圖判定 fallback；本地模式下預設關閉以降低 Pi5 CPU 開銷
+        fallback_to_llm = settings.get("intent_fallback_to_llm", (self.routing_mode == "cloud"))
+
+        if not fallback_to_llm:
+            # 0ms 本地啟發式分流 (Local Heuristic Routing)
+            # 判斷是否為問句，或長度大於 12 字，是則偏向 search_web，否則為一般 chat
+            is_question = any(q in normalized_input for q in ["?", "？", "嗎", "什", "怎", "幾", "几", "誰", "谁"])
+            has_long_query = len(normalized_input) > 12
+            
+            if is_question or has_long_query:
+                decided_intent = "search_web"
+            else:
+                decided_intent = "chat"
+                
+            print(f"[{get_timestamp()}] [Local Heuristic Intent] Decided: {decided_intent} (fallback_to_llm=False)")
+            return decided_intent
+
+        # ─── Phase 3: LLM Fallback (If enabled) ───
         system_prompt = """你是一個精準的意圖辨識助手。請分析使用者的輸入，並只回傳動作名稱本身，絕對不要包含任何其他文字、JSON 格式、標點符號、空格或任何多餘的解釋！
 
 可選動作列表：
@@ -505,11 +572,7 @@ class OllamaBrain:
 - swap_model: 切換模型或大腦。
 
 回覆規範：請「只」輸出動作名稱本身（例如：chat 或 add_reminder），絕對不要有其他字！"""
-        
-        import settings_manager
-        settings = settings_manager.load_settings()
-        self.routing_mode = settings.get("routing_mode", "local")
-        
+
         allowed_actions = [
             "add_reminder", "datetime", "search_web", "chat", "pet_cat",
             "emotional_support", "reminiscence", "temp_analysis", "emergency",
@@ -528,13 +591,10 @@ class OllamaBrain:
                 if cleaned_action in allowed_actions:
                     return cleaned_action
                 
-                # Fuzzy fallback matching
                 for act in allowed_actions:
                     if act in cleaned_action:
                         return act
                         
-                import json
-                import re
                 match = re.search(r'\{.*?\}', content, re.DOTALL)
                 if match:
                     parsed = json.loads(match.group(0))
@@ -569,8 +629,6 @@ class OllamaBrain:
                 if act in cleaned_action:
                     return act
                     
-            import json
-            import re
             match = re.search(r'\{.*?\}', content, re.DOTALL)
             if match:
                 parsed = json.loads(match.group(0))

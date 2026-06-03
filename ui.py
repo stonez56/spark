@@ -1,4 +1,5 @@
 import asyncio
+import queue
 import logging
 import json
 import builtins
@@ -276,19 +277,22 @@ async def run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, trans
 
     async def monitor_state_queue():
         while True:
-            if not state_queue.empty():
-                item = state_queue.get()
-                if isinstance(item, dict):
-                    # Mode/model update dict — update state and broadcast to frontend
-                    app.state.current_mode = item.get('mode', app.state.current_mode)
-                    app.state.current_model = item.get('model', app.state.current_model)
-                    await broadcast({
-                        "type": "model_info",
-                        "mode": app.state.current_mode,
-                        "model": app.state.current_model,
-                    })
-                else:
-                    await broadcast_state(item.value)
+            try:
+                while True:
+                    item = state_queue.get_nowait()
+                    if isinstance(item, dict):
+                        # Mode/model update dict — update state and broadcast to frontend
+                        app.state.current_mode = item.get('mode', app.state.current_mode)
+                        app.state.current_model = item.get('model', app.state.current_model)
+                        await broadcast({
+                            "type": "model_info",
+                            "mode": app.state.current_mode,
+                            "model": app.state.current_model,
+                        })
+                    else:
+                        await broadcast_state(item.value)
+            except queue.Empty:
+                pass
             await asyncio.sleep(0.05)
 
     async def monitor_tts_queue():
@@ -296,19 +300,25 @@ async def run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, trans
             # Drain ALL pending audio chunks per iteration to prevent gaps in streaming playback.
             # A single 50ms sleep with one-item-per-cycle causes silent gaps between TTS chunks.
             drained = False
-            while not tts_queue.empty():
-                audio_bytes = tts_queue.get()
-                await broadcast_audio(audio_bytes)
-                drained = True
+            try:
+                while True:
+                    audio_bytes = tts_queue.get_nowait()
+                    await broadcast_audio(audio_bytes)
+                    drained = True
+            except queue.Empty:
+                pass
             # If nothing was available, yield control briefly
             if not drained:
                 await asyncio.sleep(0.01)
 
     async def monitor_transcript_queue():
         while True:
-            if not transcript_queue.empty():
-                user_text, spark_text = transcript_queue.get()
-                await broadcast_transcript(user_text, spark_text)
+            try:
+                while True:
+                    user_text, spark_text = transcript_queue.get_nowait()
+                    await broadcast_transcript(user_text, spark_text)
+            except queue.Empty:
+                pass
             await asyncio.sleep(0.05)
 
     state_task = asyncio.create_task(monitor_state_queue())
