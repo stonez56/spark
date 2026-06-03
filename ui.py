@@ -48,10 +48,12 @@ current_state = SparkState.LOADING.value
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    # Initialize the ASGI scope write lock for the websocket to serialize writes
+    websocket.scope["write_lock"] = asyncio.Lock()
     connected_clients.add(websocket)
     print("🟢 [WebSocket] Browser client connected!")
     # Send the current state immediately upon connection
-    await websocket.send_text(json.dumps({"type": "state", "value": current_state}))
+    await _safe_send_text(websocket, json.dumps({"type": "state", "value": current_state}))
     audio_active_printed = False
     try:
         while True:
@@ -229,12 +231,28 @@ async def debug_log(payload: dict):
 
 
 
+async def _safe_send_text(websocket: WebSocket, text: str):
+    if "write_lock" not in websocket.scope:
+        websocket.scope["write_lock"] = asyncio.Lock()
+    async with websocket.scope["write_lock"]:
+        await websocket.send_text(text)
+
+
+async def _safe_send_bytes(websocket: WebSocket, data: bytes):
+    if "write_lock" not in websocket.scope:
+        websocket.scope["write_lock"] = asyncio.Lock()
+    async with websocket.scope["write_lock"]:
+        await websocket.send_bytes(data)
+
+
 async def broadcast(message: dict):
     dead = set()
+    payload = json.dumps(message)
     for client in list(connected_clients):
         try:
-            await client.send_text(json.dumps(message))
-        except Exception:
+            await _safe_send_text(client, payload)
+        except Exception as e:
+            logging.warning(f"Error broadcasting text to client, removing from active: {e}")
             dead.add(client)
     connected_clients.difference_update(dead)
 
@@ -251,11 +269,14 @@ async def broadcast_transcript(user_text: str, spark_text: str):
 
 async def broadcast_audio(audio_bytes: bytes):
     print(f"[Web UI] Broadcasting {len(audio_bytes)} bytes of audio to clients...")
+    dead = set()
     for client in list(connected_clients):
         try:
-            await client.send_bytes(audio_bytes)
+            await _safe_send_bytes(client, audio_bytes)
         except Exception as e:
-            logging.error(f"Error sending audio to websocket: {e}")
+            logging.error(f"Error sending audio to websocket, removing from active: {e}")
+            dead.add(client)
+    connected_clients.difference_update(dead)
 
 
 async def run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue):

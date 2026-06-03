@@ -741,57 +741,61 @@
             ws.binaryType = 'arraybuffer';
 
             ws.onmessage = async function (event) {
-                if (typeof event.data === "string") {
-                    const msg = JSON.parse(event.data);
-                    if (msg.type === "state") {
-                        const s = msg.value;
-                        if (s !== currentMimoState) {
-                            debugLog("Mimo state transition: " + currentMimoState + " -> " + s);
-                            // stopAllAudio() should fire on Listening/Attentive (wake word interrupt)
-                            // Speaking state filler cutoff is now handled via binary FIFO STOP_SIGNAL
-                            if (s === "Listening" || s === "Attentive") {
-                                stopAllAudio();
+                try {
+                    if (typeof event.data === "string") {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type === "state") {
+                            const s = msg.value;
+                            if (s !== currentMimoState) {
+                                debugLog("Mimo state transition: " + currentMimoState + " -> " + s);
+                                // stopAllAudio() should fire on Listening/Attentive (wake word interrupt)
+                                // Speaking state filler cutoff is now handled via binary FIFO STOP_SIGNAL
+                                if (s === "Listening" || s === "Attentive") {
+                                    stopAllAudio();
+                                }
+                                currentMimoState = s;
                             }
-                            currentMimoState = s;
+                            if (s === "Thinking") {
+                                thinkingStart = Date.now();
+                                userSubmitTimeStr = getFormattedTime();
+                            } else if (s === "Speaking" && thinkingStart) {
+                                lastLatency = ((Date.now() - thinkingStart) / 1000).toFixed(2);
+                                mimoSpeakTimeStr = getFormattedTime();  // Mimo timestamp = when Speaking actually starts
+                                thinkingStart = null;
+                            }
+                            
+                            // No looping purr sound to prevent background noise during speech
+                            
+                            if (s === "Loading") {
+                                document.getElementById('mimo-loader').style.display = 'flex';
+                                document.getElementById('mimo-loader').style.opacity = '1';
+                            } else {
+                                const loader = document.getElementById('mimo-loader');
+                                if (loader && loader.style.display !== 'none') {
+                                    loader.style.opacity = '0';
+                                    setTimeout(() => { loader.style.display = 'none'; }, 500);
+                                }
+                            }
+                            faceContainer.className = `state-${s}`;
+                            stateLabel.innerText = s;
+                            escHint.classList.toggle('active', s === 'Speaking');
+                        } else if (msg.type === "transcript") {
+                            let latencyVal = lastLatency;
+                            lastLatency = null;
+                            updateTranscript(msg.user, msg.spark, latencyVal);
+                        } else if (msg.type === "model_info") {
+                            updateModelBadge(msg.mode, msg.model);
                         }
-                        if (s === "Thinking") {
-                            thinkingStart = Date.now();
-                            userSubmitTimeStr = getFormattedTime();
-                        } else if (s === "Speaking" && thinkingStart) {
-                            lastLatency = ((Date.now() - thinkingStart) / 1000).toFixed(2);
-                            mimoSpeakTimeStr = getFormattedTime();  // Mimo timestamp = when Speaking actually starts
-                            thinkingStart = null;
-                        }
-                        
-                        // No looping purr sound to prevent background noise during speech
-                        
-                        if (s === "Loading") {
-                            document.getElementById('mimo-loader').style.display = 'flex';
-                            document.getElementById('mimo-loader').style.opacity = '1';
+                    } else if (event.data instanceof ArrayBuffer) {
+                        if (event.data.byteLength <= 4) {
+                            debugLog("Binary STOP signal received. Stopping all audio.");
+                            stopAllAudio();
                         } else {
-                            const loader = document.getElementById('mimo-loader');
-                            if (loader && loader.style.display !== 'none') {
-                                loader.style.opacity = '0';
-                                setTimeout(() => { loader.style.display = 'none'; }, 500);
-                            }
+                            await playAudio(event.data);
                         }
-                        faceContainer.className = `state-${s}`;
-                        stateLabel.innerText = s;
-                        escHint.classList.toggle('active', s === 'Speaking');
-                    } else if (msg.type === "transcript") {
-                        let latencyVal = lastLatency;
-                        lastLatency = null;
-                        updateTranscript(msg.user, msg.spark, latencyVal);
-                    } else if (msg.type === "model_info") {
-                        updateModelBadge(msg.mode, msg.model);
                     }
-                } else if (event.data instanceof ArrayBuffer) {
-                    if (event.data.byteLength <= 4) {
-                        debugLog("Binary STOP signal received. Stopping all audio.");
-                        stopAllAudio();
-                    } else {
-                        await playAudio(event.data);
-                    }
+                } catch (err) {
+                    debugLog("Error in ws.onmessage: " + err.message + "\nStack: " + err.stack);
                 }
             };
 
@@ -800,54 +804,58 @@
 
         // ── Audio Playback ─────────────────────────
         async function playAudio(arrayBuffer) {
-            debugLog("playAudio entered, chunk size: " + arrayBuffer.byteLength + " bytes. State: " + playbackContext.state);
-            // Resume AudioContext if suspended (Chrome suspends it after ~2s of inactivity)
-            if (playbackContext.state === 'suspended') {
-                debugLog("AudioContext is suspended, resuming...");
-                await playbackContext.resume();
-                debugLog("AudioContext resume resolved. New state: " + playbackContext.state);
-            }
-            const int16Array = new Int16Array(arrayBuffer);
-            if (int16Array.length === 0) {
-                debugLog("Empty chunk skipped.");
-                return;
-            }
-            const float32Array = new Float32Array(int16Array.length);
-            for (let i = 0; i < int16Array.length; i++) {
-                float32Array[i] = int16Array[i] / 32768.0;
-            }
-            const audioBuffer = playbackContext.createBuffer(1, float32Array.length, 22050);
-            audioBuffer.copyToChannel(float32Array, 0);
-
-            const source = playbackContext.createBufferSource();
-            source.buffer = audioBuffer;
-            
-            // Connect to gainNode for real-time master volume control
-            if (!gainNode) {
-                gainNode = playbackContext.createGain();
-                gainNode.gain.value = masterVolume;
-                gainNode.connect(playbackContext.destination);
-            }
-            source.connect(gainNode);
-            
-            const now = playbackContext.currentTime;
-            const oldStartTime = nextStartTime;
-            if (nextStartTime < now) {
-                nextStartTime = now + 0.05; // 50ms buffer to prevent jitter
-            }
-            debugLog("Scheduling chunk: nextStartTime=" + nextStartTime.toFixed(3) + " (was " + oldStartTime.toFixed(3) + "), now=" + now.toFixed(3) + ", duration=" + audioBuffer.duration.toFixed(3));
-            
-            source.start(nextStartTime);
-            
-            source.onended = () => {
-                const idx = activeSources.indexOf(source);
-                if (idx > -1) {
-                    activeSources.splice(idx, 1);
+            try {
+                debugLog("playAudio entered, chunk size: " + arrayBuffer.byteLength + " bytes. State: " + playbackContext.state);
+                // Resume AudioContext if suspended (Chrome suspends it after ~2s of inactivity)
+                if (playbackContext.state === 'suspended') {
+                    debugLog("AudioContext is suspended, resuming...");
+                    await playbackContext.resume();
+                    debugLog("AudioContext resume resolved. New state: " + playbackContext.state);
                 }
-            };
-            
-            activeSources.push(source);
-            nextStartTime += audioBuffer.duration;
+                const int16Array = new Int16Array(arrayBuffer);
+                if (int16Array.length === 0) {
+                    debugLog("Empty chunk skipped.");
+                    return;
+                }
+                const float32Array = new Float32Array(int16Array.length);
+                for (let i = 0; i < int16Array.length; i++) {
+                    float32Array[i] = int16Array[i] / 32768.0;
+                }
+                const audioBuffer = playbackContext.createBuffer(1, float32Array.length, 22050);
+                audioBuffer.copyToChannel(float32Array, 0);
+
+                const source = playbackContext.createBufferSource();
+                source.buffer = audioBuffer;
+                
+                // Connect to gainNode for real-time master volume control
+                if (!gainNode) {
+                    gainNode = playbackContext.createGain();
+                    gainNode.gain.value = masterVolume;
+                    gainNode.connect(playbackContext.destination);
+                }
+                source.connect(gainNode);
+                
+                const now = playbackContext.currentTime;
+                const oldStartTime = nextStartTime;
+                if (nextStartTime < now) {
+                    nextStartTime = now + 0.05; // 50ms buffer to prevent jitter
+                }
+                debugLog("Scheduling chunk: nextStartTime=" + nextStartTime.toFixed(3) + " (was " + oldStartTime.toFixed(3) + "), now=" + now.toFixed(3) + ", duration=" + audioBuffer.duration.toFixed(3));
+                
+                source.start(nextStartTime);
+                
+                source.onended = () => {
+                    const idx = activeSources.indexOf(source);
+                    if (idx > -1) {
+                        activeSources.splice(idx, 1);
+                    }
+                };
+                
+                activeSources.push(source);
+                nextStartTime += audioBuffer.duration;
+            } catch (err) {
+                debugLog("Error in playAudio: " + err.message + "\nStack: " + err.stack);
+            }
         }
 
         // ── ESC Key → Stop Audio ──────────────────
