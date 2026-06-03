@@ -34,3 +34,6 @@ memory/
 # Other temporary or build artifacts
 opencode
 length.bin
+
+# User runtime settings
+settings.json
