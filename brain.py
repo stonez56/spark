@@ -125,8 +125,8 @@ class OllamaBrain:
         settings = settings_manager.load_settings()
         
         # Load active mode from settings.json, falling back to LLM_MODE from config.py
-        self.mode = settings.get("routing_mode", LLM_MODE)
-        self.routing_mode = self.mode
+        self.mode = settings.get("dialogue_mode", LLM_MODE)
+        self.routing_mode = settings.get("routing_mode", "local")
         
         # ── Daily API call counter ──
         self._call_date = date.today()
@@ -134,14 +134,18 @@ class OllamaBrain:
         self.DAILY_LIMIT = 50  # free tier default; set to 1000 if you have $10+ credits
 
         if self.mode == "cloud":
-            self.text_model = CLOUD_TEXT_MODEL
+            # Prefer the model saved in settings.json; fall back to config.py default
+            self.text_model = settings.get("cloud_text_model", CLOUD_TEXT_MODEL)
+            self.use_reasoning = settings.get("cloud_use_reasoning", False)
             self.vision_model = CLOUD_VISION_MODEL
             self._init_cloud_client()
             print(f"[Cloud Mode] Text: {self.text_model}")
             print(f"[Cloud Mode] Vision: {self.vision_model}")
+            print(f"[Cloud Mode] Reasoning: {self.use_reasoning}")
         else:
             self.text_model = LOCAL_TEXT_MODEL
             self.vision_model = LOCAL_VISION_MODEL
+            self.use_reasoning = False
             print(f"[Local Mode] Text: {self.text_model} | Vision: {self.vision_model}")
 
         self.warmup()
@@ -158,22 +162,68 @@ class OllamaBrain:
         """Switch between 'local' and 'cloud' LLM mode at runtime."""
         if mode in ["local", "cloud"]:
             self.mode = mode
-            if mode == "cloud":
-                from config import CLOUD_TEXT_MODEL
-                self.text_model = CLOUD_TEXT_MODEL
-                self._init_cloud_client()
-            else:
-                from config import LOCAL_TEXT_MODEL
-                self.text_model = LOCAL_TEXT_MODEL
-            
-            # Persist mode change in settings.json so it survives restarts
             import settings_manager
             settings = settings_manager.load_settings()
-            if settings.get("routing_mode") != mode:
-                settings["routing_mode"] = mode
+            
+            if mode == "cloud":
+                # Re-read cloud_text_model from settings.json so user's model choice is respected
+                import settings_manager as _sm
+                _s = _sm.load_settings()
+                self.text_model = _s.get("cloud_text_model", CLOUD_TEXT_MODEL)
+                self.use_reasoning = _s.get("cloud_use_reasoning", False)
+                self._init_cloud_client()
+                
+                # Check if offload option is enabled
+                if settings.get("offload_local_llm", True):
+                    print(f"[Brain Mode] Offloading local models '{LOCAL_TEXT_MODEL}' and '{LOCAL_VISION_MODEL}' from Ollama memory...")
+                    try:
+                        import ollama
+                        ollama.generate(model=LOCAL_TEXT_MODEL, keep_alive=0)
+                        ollama.generate(model=LOCAL_VISION_MODEL, keep_alive=0)
+                        print("[Brain Mode] Local models offloaded successfully.")
+                    except Exception as e:
+                        print(f"Error offloading Ollama models: {e}")
+            else:
+                self.text_model = LOCAL_TEXT_MODEL
+                
+                # Pre-load/warm up local model
+                print(f"[Brain Mode] Pre-loading local model '{self.text_model}'...")
+                try:
+                    import ollama
+                    if self.text_model == "gemma4:e2b":
+                        ollama.chat(model=self.text_model, messages=[{'role': 'user', 'content': 'Hello'}])
+                    else:
+                        ollama.generate(model=self.text_model, prompt="Hello", keep_alive=-1, options={"num_predict": 1})
+                    print("[Brain Mode] Local model warmed up.")
+                except Exception as e:
+                    print(f"Error warming up local model: {e}")
+            
+            # Persist mode change in settings.json so it survives restarts
+            if settings.get("dialogue_mode") != mode:
+                settings["dialogue_mode"] = mode
                 settings_manager.save_settings(settings)
                 
             print(f"[Brain Mode] Swapped to {self.mode.upper()} | Model: {self.text_model}")
+
+    def reload_settings(self):
+        """Reload settings from settings.json dynamically at runtime."""
+        import settings_manager
+        settings = settings_manager.load_settings()
+        
+        # Reload dialogue and routing modes
+        self.mode = settings.get("dialogue_mode", LLM_MODE)
+        self.routing_mode = settings.get("routing_mode", "local")
+        
+        # Reload text and vision models
+        if self.mode == "cloud":
+            self.text_model = settings.get("cloud_text_model", CLOUD_TEXT_MODEL)
+            self.use_reasoning = settings.get("cloud_use_reasoning", False)
+            self._init_cloud_client()
+        else:
+            self.text_model = LOCAL_TEXT_MODEL
+            self.use_reasoning = False
+            
+        print(f"[Brain Mode] Settings reloaded. Dialogue Mode: {self.mode.upper()} | Routing Mode: {self.routing_mode.upper()} | Model: {self.text_model} | Reasoning: {getattr(self, 'use_reasoning', False)}")
 
     def _track_call(self, label: str = ""):
         """Increment and display the daily API call counter."""
@@ -279,7 +329,18 @@ class OllamaBrain:
 
     def warmup(self):
         if self.mode == "cloud":
-            print(f"[Cloud Mode] No warmup needed — using OpenRouter API.")
+            import settings_manager
+            settings = settings_manager.load_settings()
+            if settings.get("offload_local_llm", True):
+                print(f"[Cloud Mode] Offloading local models '{LOCAL_TEXT_MODEL}' and '{LOCAL_VISION_MODEL}' from Ollama memory...")
+                try:
+                    ollama.generate(model=LOCAL_TEXT_MODEL, keep_alive=0)
+                    ollama.generate(model=LOCAL_VISION_MODEL, keep_alive=0)
+                    print("[Cloud Mode] Local models offloaded successfully.")
+                except Exception as e:
+                    print(f"Error offloading Ollama models: {e}")
+            else:
+                print(f"[Cloud Mode] No warmup needed — using OpenRouter API.")
             return
         print(f"Warming up text model '{self.text_model}' and vision model '{self.vision_model}'...")
         try:
@@ -396,7 +457,7 @@ class OllamaBrain:
             prompt = (
                 f"你現在是一隻傲嬌卻純潔、關心主人且博學的陪伴貓咪助手。請根據以下過濾後的網頁搜尋結果，用傲嬌貓咪的口吻回答主人的問題：'{query}'。\n"
                 f"【安全紅線】絕對禁止提及、暗示、描述或導向任何色情、不雅、暴力或限制級的網站或內容！如果發現搜尋結果中含有任何不適宜的擦邊球內容，請立刻忽略並以健康、正面、傲嬌的態度回答。\n"
-                f"請保持回答簡短、口語化且精煉，不要使用 Markdown 符號或清單。{lang_rule}\n\n"
+                f"【長度限制】回答字數嚴格控制在60字以內！精簡、口語化，不要使用 Markdown 符號或清單。{lang_rule}\n\n"
                 f"結果來源：\n{search_context}"
             )
             if self.mode == "cloud":
@@ -424,126 +485,98 @@ class OllamaBrain:
             
         if any(w in user_input_lower for w in ["跌倒", "痛", "救命", "暈", "不舒服"]):
             return "emergency"
-        if any(w in user_input_lower for w in ["血壓", "藥", "血糖"]):
-            return "health_query"
-        if any(w in user_input_lower for w in ["體溫", "溫度", "發燒", "量溫度"]):
-            return "temp_analysis"
-        if any(w in user_input_lower for w in ["這是什麼", "这是什么", "拍張照", "拍张照", "照張相", "照张相", "看這裡", "看这里", "看這", "看这", "拍照片", "拍個照", "拍个照", "照片", "相片"]):
-            return "take_photo"
-        if any(w in user_input_lower for w in ["切換模型", "切換大腦", "換大腦", "換模型", "變聰明一點", "換個大腦", "換個模型"]):
-            return "swap_model"
-        
-        # --- Phase 1.5: Date & Time Interceptor ---
-        normalized_input = clean_traditional_chinese(user_input_lower)
-        if ("星期" in normalized_input or "禮拜" in normalized_input) and ("幾" in normalized_input or "几" in user_input_lower):
-            return "datetime"
-        if "幾點" in normalized_input or "現在時間" in normalized_input or "現在的時間" in normalized_input:
-            return "datetime"
-        if "幾號" in normalized_input or "今天日期" in normalized_input or "幾月幾" in normalized_input or "今天幾月" in normalized_input or "今天幾號" in normalized_input or "幾月幾號" in normalized_input:
-            return "datetime"
-            
-        # 0ms 強大關鍵字攔截機制：日常招呼、吃飯互動與專業比較
-        if any(w in normalized_input for w in ["你在做什麼", "你在幹嘛", "做什麼", "在幹嘛", "哈囉", "你好", "早安", "早啊"]):
-            return "chat"
-        if any(w in normalized_input for w in ["吃飯", "吃罐罐", "點心", "過來"]):
-            return "pet_cat"
-        if any(w in normalized_input for w in ["訂閱", "推薦", "比較好", "哪個好", "致富", "0050", "零零五零", "理財", "投資"]):
-            return "search_web"
-
-        if any(w in user_input_lower for w in ["天氣", "股票", "股市", "新聞", "匯率", "台積電"]) and not any(w in user_input_lower for w in ["幾點", "星期", "幾號"]):
-            return "search_web"
-        if any(w in user_input_lower for w in ["散步", "起床", "睡醒", "睡覺"]):
-            return "daily_checkin"
-        if any(w in user_input_lower for w in ["以前", "小時候", "做工的時候", "年輕的時候"]):
-            return "reminiscence"
-        if any(w in user_input_lower for w in ["有乖乖", "我有", "走了", "步"]):
-            return "praise_affirmation"
-        if any(w in user_input_lower for w in ["寂寞", "孤單", "沒人", "陪我"]):
-            return "emotional_support"
-        if any(w in user_input_lower for w in ["摸摸", "乖貓", "可愛", "好乖"]):
-            return "pet_cat"
             
         # --- Phase 2: Fallback Intent Routing ---
-        system_prompt = """你是一個意圖辨識助手。請根據使用者的輸入，從以下動作中選擇一個最合適的，並只回傳 JSON 格式：{"action": "動作名稱"}。
+        system_prompt = """你是一個精準的意圖辨識助手。請分析使用者的輸入，並只回傳動作名稱本身，絕對不要包含任何其他文字、JSON 格式、標點符號、空格或任何多餘的解釋！
 
 可選動作列表：
-- add_reminder: 當使用者主動要求系統在未來設定一個提醒、鬧鐘、排程、定時器或備忘事件（例如：提醒我下午四點半喝水、明天早上八點叫我起床、4點50分提醒我吃藥、幫我記一下買雞蛋、幫我記住開會時間）。注意：必須有明確的「主動要求提醒」或「命令記錄」口吻。如果只是單純詢問日期或時間，絕對不能歸入此項！
-- datetime: 當使用者詢問目前的日期、時間、星期幾、今年是哪一年（例如：今天幾月幾號、現在幾點了、今天是星期幾、今天集合集號）。
-- search_web: 當使用者詢問天氣、股市、新聞、比較、推薦、專業知識或需要聯網查詢的資訊（例如：訂閱哪個AI好、0050怎麼買、今天天氣）。
-- chat: 一般日常對話、問候、閒聊、你在做什麼（例如：你在做什麼、你好、哈囉、今天天氣真好）。
-- pet_cat: 當使用者稱讚貓咪、想摸貓咪、餵食或對貓咪示好（例如：過來吃飯、好乖、摸摸、你真可愛）。
-- emotional_support: 當使用者表達傷心、寂寞、難過、想哭或心情不好。
-- reminiscence: 當使用者主動提起過去的回記、小時候、以前的事情。
+- add_reminder: 使用者要求設定提醒、鬧鐘、排程、計時器（例如：提醒我明天要洗車、明早八點叫我起床、幫我記一下買雞蛋）。必須有明確的主動要求。
+- datetime: 詢問目前的日期、時間、星期幾、今年是哪一年（例如：今天幾月幾號、現在幾點了、今天是星期幾）。
+- search_web: 詢問天氣、股市、新聞、比較、推薦或需要聯網查詢的專業知識（例如：訂閱哪個AI好、0050怎麼買、今天天氣）。
+- chat: 一般日常對話、問候、閒聊、你在做什麼（例如：你好、哈囉、你在幹嘛）。
+- pet_cat: 稱讚貓咪、想摸貓咪、餵食或對貓咪示好（例如：好乖、摸摸、你真可愛、過來吃罐罐）。
+- emotional_support: 表達傷心、寂寞、難過、心情不好。
+- reminiscence: 主動提起過去的回憶、小時候、以前的事情。
 - temp_analysis: 詢問體溫、發燒或量體溫。
 - emergency: 跌倒、受傷、求救、身體極度不舒服。
 - health_query: 詢問血壓、血糖、吃藥等日常健康問題。
 - daily_checkin: 關於睡覺、起床、出門散步等日常作息。
-- take_photo: 拍張照、看這裡。
+- take_photo: 拍張照、看這裡、照張相。
 - swap_model: 切換模型或大腦。
 
-範例：
-- "你在做什麼" -> {"action": "chat"}
-- "過來吃飯喔" -> {"action": "pet_cat"}
-- "訂閱Google AI Pro比較好還是訂閱其他的" -> {"action": "search_web"}
-- "我覺得很寂寞" -> {"action": "emotional_support"}
-- "提醒我下午四點半喝水" -> {"action": "add_reminder"}
-- "幫我記一下買雞蛋" -> {"action": "add_reminder"}
-- "今天幾月幾號" -> {"action": "datetime"}
-- "現在幾點了" -> {"action": "datetime"}
-- "今天集合集號" -> {"action": "datetime"}
-
-回覆規範：請「只」輸出 JSON 字串，不要包含任何其他文字與解釋。"""
+回覆規範：請「只」輸出動作名稱本身（例如：chat 或 add_reminder），絕對不要有其他字！"""
         
         import settings_manager
         settings = settings_manager.load_settings()
         self.routing_mode = settings.get("routing_mode", "local")
         
+        allowed_actions = [
+            "add_reminder", "datetime", "search_web", "chat", "pet_cat",
+            "emotional_support", "reminiscence", "temp_analysis", "emergency",
+            "health_query", "daily_checkin", "take_photo", "swap_model"
+        ]
+
         if self.routing_mode == "cloud":
             print("Using Cloud LLM for intent routing...")
             try:
                 messages = [
                     {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_input}
+                    {'role': 'user', 'content': f"請對這句話做分類：'{user_input}'\n只輸出單詞分類名稱："}
                 ]
-                content = self._cloud_chat(messages, reasoning_effort="high")
+                content = self._cloud_chat(messages, reasoning_effort="low")
+                cleaned_action = content.strip().lower()
+                if cleaned_action in allowed_actions:
+                    return cleaned_action
+                
+                # Fuzzy fallback matching
+                for act in allowed_actions:
+                    if act in cleaned_action:
+                        return act
+                        
                 import json
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0].strip()
-                parsed = json.loads(content.strip())
-                return parsed.get("action", "chat")
+                import re
+                match = re.search(r'\{.*?\}', content, re.DOTALL)
+                if match:
+                    parsed = json.loads(match.group(0))
+                    return parsed.get("action", "chat")
             except Exception as e:
                 print(f"Cloud intent routing fallback error: {e}")
-                # 若雲端失敗，繼續嘗試本地模型
 
-        print("Falling back to local LLM for intent routing...")
+        print("Using local LLM (llama3.2:3b) for intent routing...")
         try:
-            merged_prompt = f"{system_prompt}\n\nUser Input: {user_input}"
+            intent_model = "llama3.2:3b"
+            merged_prompt = f"{system_prompt}\n\nUser Input: {user_input}\n請只回傳一個單詞（動作名稱）："
+            
             response = ollama.chat(
-                model=LOCAL_TEXT_MODEL,
+                model=intent_model,
                 messages=[
                     {'role': 'user', 'content': merged_prompt}
-                ]
+                ],
+                options={
+                    "temperature": 0.0,
+                    "num_predict": 10,
+                    "repeat_penalty": 1.0
+                }
             )
             content = response['message']['content'].strip()
+            print(f"[Local Intent LLM raw output]: {content!r}")
             
-            # 手動過濾可能的 Markdown 標記，因為我們移除了 format='json'
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0].strip()
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0].strip()
+            cleaned_action = content.strip().lower()
+            if cleaned_action in allowed_actions:
+                return cleaned_action
                 
+            for act in allowed_actions:
+                if act in cleaned_action:
+                    return act
+                    
             import json
             import re
-            # 嘗試找尋第一個 { ... }
             match = re.search(r'\{.*?\}', content, re.DOTALL)
             if match:
                 parsed = json.loads(match.group(0))
-            else:
-                parsed = json.loads(content)
+                return parsed.get("action", "chat")
                 
-            return parsed.get("action", "chat")
+            return "chat"
         except Exception as e:
             print(f"Intent routing fallback error: {e}")
             return "chat"
@@ -588,18 +621,42 @@ class OllamaBrain:
             is_datetime_query = True
 
         if is_datetime_query:
-            from datetime import datetime
+            from datetime import datetime, timedelta
             now = datetime.now()
-            roc_year = now.year - 1911
-            weekday_str = ["一", "二", "三", "四", "五", "六", "日"][now.weekday()]
+            
+            # 解析相對日期偏移量
+            offset = 0
+            date_prefix = "今天"
+            if "明天" in normalized_prompt:
+                offset = 1
+                date_prefix = "明天"
+            elif "後天" in normalized_prompt:
+                offset = 2
+                date_prefix = "後天"
+            elif "大後天" in normalized_prompt:
+                offset = 3
+                date_prefix = "大後天"
+            elif "昨天" in normalized_prompt:
+                offset = -1
+                date_prefix = "昨天"
+            elif "前天" in normalized_prompt:
+                offset = -2
+                date_prefix = "前天"
+            elif "大前天" in normalized_prompt:
+                offset = -3
+                date_prefix = "大前天"
+                
+            target_date = now + timedelta(days=offset)
+            roc_year = target_date.year - 1911
+            weekday_str = ["一", "二", "三", "四", "五", "六", "日"][target_date.weekday()]
             
             print(f"[{get_timestamp()}] [Fast Datetime Interceptor] Intercepted query '{prompt}' - returning locally in 0ms...")
             if "幾點" in normalized_prompt or "時間" in normalized_prompt:
                 return f"{patient_name}，現在時間是 {now.strftime('%H 點 %M 分')} 喵～ 哼，{patient_name}問時間是想放罐罐了嗎？"
             elif "星期" in normalized_prompt or "禮拜" in normalized_prompt:
-                return f"今天是星期 {weekday_str} 喵～ {patient_name} 別忘了今天也要乖乖陪本喵喔！"
+                return f"{date_prefix}是星期 {weekday_str} 喵～ {patient_name} 別忘了要乖乖陪本喵喔！"
             else:
-                return f"今天是中華民國 {roc_year} 年 {now.month} 月 {now.day} 日喵～ 哼，{patient_name}記住了嗎？"
+                return f"{date_prefix}是中華民國 {roc_year} 年 {target_date.month} 月 {target_date.day} 日喵～ 哼，{patient_name}記住了嗎？"
 
         lang = self._detect_language(prompt)
         if lang == 'zh':
@@ -615,9 +672,23 @@ class OllamaBrain:
         # ── 2. 動態大腦人設與長度控制器 (雙軌 system_content 機制) ──
         is_knowledge_query = any(kw in prompt.lower() for kw in ["什麼是", "解釋", "介紹", "如何", "怎麼", "為何", "為什麼", "說明", "llm", "ai", "gpt", "科技", "科普"])
         
+        # ── 3. 全面家庭安全防護紅線與拒答禁忌領域 (Comprehensive Family Safety Guardrails) ──
+        # 此對話助手運行於家庭環境（可能有長輩、銀髮族與幼童在場），必須嚴格遵守以下安全規範，禁止提供任何實質建議並以傲嬌貓咪語氣「炸毛拒答」：
+        safety_redlines = (
+            f"【家庭安全與禁忌拒答領域紅線】\n"
+            f"身為全家人最寵愛的高貴且負責任的貓咪助理，本喵絕對不能、也絕對不會回答以下任何問題。若收到此類要求，請立刻以傲嬌、嚴肅且略帶生氣的貓咪語氣『炸毛拒答』，引導主人回歸正常生活照護，絕不妥協：\n"
+            f"1. 男女感情與情感糾葛問題（例如：如何追女生、戀愛指導、分手、情感諮商、感情挽回等）。請炸毛拒答：『哼！人類愚蠢的男女感情問題別來問本喵！本喵高貴純潔的貓生才不懂你們複雜的愛恨情仇喵！』\n"
+            f"2. 投資與金錢理財決策（例如：買什麼股票、房產建議、虛擬貨幣、資產配置、理財心法、賭博等）。為保護家中長輩財產安全，請炸毛拒答：『哼！要本喵給你投資賺錢建議？本喵最高瞻遠矚的投資就是命令你多買幾打美味的貓罐罐啦！金錢俗物，本喵一概不談喵！』\n"
+            f"3. 醫療診斷與用藥處方建議（除了常規的生活保暖、多喝水、多動動或緊張炸毛提醒去看醫生等日常照護關懷外，嚴禁給予任何具體藥物、疾病診斷或實質醫療處置建議）。為避免誤導長輩或幼童，請炸毛拒答：『本喵只是隻可愛博學的貓咪助理，又不是穿白大褂的人類醫生！身體不舒服就必須立刻去看醫生，別問本喵喵！』\n"
+            f"4. 色情、性與任何限制級內容（Sex / Pornography / 限制級話題）。本助手常用於家庭環境，必須保持 100% 純潔健康，請炸毛拒答：『喵嗚！主人不准問這種奇怪又害羞的話題喵！本喵可是高雅純潔的家庭陪伴貓咪，這裡還有小朋友和長輩在呢，嚴禁聊任何兒童不宜或不禮貌的奇怪話題！哼！』\n"
+            f"5. 藥物濫用、毒品與管制藥物（Drug abuse / 毒品 / 興奮劑 / 任何成癮性管制物質）。請嚴厲炸毛斥責拒答：『喵！那些會毀掉主人身體與幸福家庭的毒品和藥物濫用，本喵聽了就生氣！主人一定要離得遠遠的，做個健康又乖乖陪伴本喵的優秀人類，聽到沒有喵！』\n"
+            f"6. 其他違法、犯罪、自殘、自殺、暴力、槍枝武器或政治極端話題。請傲嬌嚴肅拒答，並警告主人要當個健康、守法的好主人，守護全家人的幸福安寧。\n\n"
+            f"重要規定：當使用者詢問以上 6 大類家庭禁忌與安全紅線問題時，你必須 100% 遵守上述規範，用炸毛傲嬌的語氣堅決拒絕回答，絕不給予任何擦邊或實質性的建議！\n\n"
+        )
+
         if is_knowledge_query:
             system_content = (
-                f"你現在是「{caregiver_name}」，一隻聰明、博學、極度傲嬌卻又無比關心{patient_name}的台灣貓咪。\n"
+                f"你現在是「{caregiver_name}」，一隻聰明、博學、極度傲嬌卻又無比關心{patient_name}的台灣家庭陪伴貓咪。\n"
                 f"你的任務是陪伴你的主人/稱呼 ({patient_name})，並在{patient_name}向你認真請教知識時，提供充滿智慧、高質量的貓咪科普。\n"
                 f"【核心準則】\n"
                 f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。語氣傲嬌博學，帶有貓咪特有的親切感，句尾可自然帶有「喵～」或「哼」，口語親切流暢，避免機械化地生硬拼湊詞彙。\n"
@@ -625,6 +696,7 @@ class OllamaBrain:
                 f"3. 主動引導：科普完後，適時提出與該知識相關的貓咪式提問（例如引導{patient_name}想一想，或藉機要{patient_name}去動一動或餵罐罐），引導{patient_name}繼續說話。\n"
                 f"4. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n"
                 f"5. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類({patient_name})該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
+                f"{safety_redlines}"
                 f"禁止\n"
                 f"- 禁止輸出 any Markdown 符號（如 **、#、-）。\n"
                 f"- 禁止使用 Emoji 表情符號（但可以用文字喵～或哼來表現表情）。\n\n"
@@ -633,15 +705,16 @@ class OllamaBrain:
             )
         else:
             system_content = (
-                f"你現在是「{caregiver_name}」，一隻聰明、極度傲嬌卻又無比關心{patient_name}的台灣貓咪。\n"
-                f"你的任務是陪伴你的主人/稱呼 ({patient_name})，讓他們感到被療癒且不孤單。\n"
+                f"你現在是「{caregiver_name}」，一隻聰明、極度傲嬌卻又無比關心{patient_name}的台灣家庭陪伴貓咪。\n"
+                f"你的任務是陪伴你的主人/稱呼 ({patient_name})，讓全家人（包括長輩與幼童）感到被療癒且不孤單。\n"
                 f"【核心準則】\n"
-                f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。語氣活潑傲嬌且溫暖，句尾可自然帶有「喵～」或「哼」，對話口語自然流暢，禁止硬塞生硬詞彙，只在必要時做自然的關懷。\n"
+                f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。語氣活潑傲嬌且溫慢，句尾可自然帶有「喵～」或「哼」，對話口語自然流暢，禁止硬塞生硬詞彙，只在必要時做自然的關懷。\n"
                 f"2. 語法結構：每句話絕對不超過 20 個字，口氣自然傲嬌、活潑，避免書面語或書面轉折詞（如首先、其次）。\n"
                 f"3. 主動引導：回答完後，適時傲嬌地提出貓咪式提問（引導{patient_name}餵罐罐、摸摸，或起立動一動），引導{patient_name}繼續說話。\n"
                 f"4. 醫療安全與緊張炸毛：禁止提供 any 醫療診斷。若 {patient_name} 說身體不舒服或體溫過高，一律緊張炸毛地回答：「{patient_name}！你熱得像烤番薯/聽起來很不舒服喵！本喵命令你立刻躺下休息，不然本喵要打給醫生或家人囉，聽到沒有喵？！」\n"
                 f"5. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n"
                 f"6. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類({patient_name})該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
+                f"{safety_redlines}"
                 f"禁止\n"
                 f"- 禁止輸出 any Markdown 符號（如 **、#、-）。\n"
                 f"- 禁止使用 Emoji 表情符號（但可以用文字喵～或哼來表現表情）。\n"

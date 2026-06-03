@@ -192,6 +192,19 @@
             <button class="mode-btn active-local" id="btn-local" onclick="setMode('local')">⚡ Local 邊緣運算</button>
             <button class="mode-btn" id="btn-cloud" onclick="setMode('cloud')">☁ Cloud 雲端大模型</button>
         </div>
+        <div class="form-group" id="cloud-model-group" style="margin-top: 15px; display: none;">
+            <label for="cloud-model" style="font-size: 14px; color: #aaa;">☁️ 雲端模型選擇 (Cloud Model Select)</label>
+            <select id="cloud-model" onchange="saveSettings()" style="width:100%; padding:10px; background:#1c1c24; border:1px solid rgba(255,255,255,0.15); color:#fff; border-radius:6px; font-size:14px; font-family:'Inter'; outline:none; transition: border-color 0.2s;">
+                <option value="openai/gpt-oss-120b:free">openai/gpt-oss-120b (Free)</option>
+                <option value="google/gemma-4-31b-it:free">google/gemma-4-31b-it (Free)</option>
+                <option value="moonshotai/kimi-k2.6:free">moonshotai/kimi-k2.6 (Free)</option>
+                <option value="deepseek/deepseek-v4-flash">deepseek/deepseek-v4-flash (Paid)</option>
+            </select>
+        </div>
+        <div class="form-group" id="cloud-reasoning-group" style="margin-top: 15px; display: none; flex-direction: row; align-items: center; gap: 8px;">
+            <input type="checkbox" id="cloud-use-reasoning" onchange="saveSettings()" style="width: 18px; height: 18px; cursor: pointer; accent-color: #00ffff;">
+            <label for="cloud-use-reasoning" style="cursor: pointer; font-size: 14px; color: #ddd; user-select: none;">🧠 啟用深度思考/推理模式 (適合 R1 等推理模型，會增加延遲)</label>
+        </div>
     </div>
 
     <!-- Intent Routing Mode Settings -->
@@ -224,6 +237,10 @@
                 <option value="normal" selected>😊 一般語者 (1.8 秒靜音自動斷句)</option>
                 <option value="slow">🐢 慢速語者 (2.5 秒靜音自動斷句)</option>
             </select>
+        </div>
+        <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-top: 10px; margin-bottom: 15px;">
+            <input type="checkbox" id="offload-local-llm" style="width: 18px; height: 18px; cursor: pointer; accent-color: #00ffff;">
+            <label for="offload-local-llm" style="cursor: pointer; font-size: 14px; color: #ddd; user-select: none;">☁️ 雲端模式下主動釋放本地 Ollama 資源 (節省 Pi 5 算力與記憶體)</label>
         </div>
         <div style="display:flex; align-items:center; gap:10px; margin-top: 15px;">
             <button class="btn-primary" id="save-settings-btn" onclick="saveSettings()">儲存設定</button>
@@ -317,6 +334,20 @@
     function updateModeButtons(mode) {
         document.getElementById('btn-local').className = 'mode-btn' + (mode==='local' ? ' active-local' : '');
         document.getElementById('btn-cloud').className = 'mode-btn' + (mode==='cloud' ? ' active-cloud' : '');
+        
+        // Show/hide cloud model selection based on active mode
+        const cloudModelGroup = document.getElementById('cloud-model-group');
+        if (cloudModelGroup) {
+            cloudModelGroup.style.display = mode === 'cloud' ? 'block' : 'none';
+        }
+        const cloudReasoningGroup = document.getElementById('cloud-reasoning-group');
+        if (cloudReasoningGroup) {
+            cloudReasoningGroup.style.display = mode === 'cloud' ? 'flex' : 'none';
+        }
+    }
+
+    function getDialogueMode() {
+        return document.getElementById('btn-cloud').className.includes('active-cloud') ? 'cloud' : 'local';
     }
 
     // --- Settings Logic ---
@@ -334,6 +365,10 @@
             const patient = document.getElementById('patient-name').value;
             const caregiver = document.getElementById('caregiver-name').value;
             const speed = document.getElementById('speaking-speed').value;
+            const offload = document.getElementById('offload-local-llm').checked;
+            const cloudModel = document.getElementById('cloud-model').value;
+            const useReasoning = document.getElementById('cloud-use-reasoning').checked;
+            const dialogueMode = getDialogueMode();
             
             await fetch('/api/settings', {
                 method: 'POST',
@@ -342,7 +377,11 @@
                     patient_name: patient,
                     caregiver_name: caregiver,
                     speaking_speed: speed,
-                    routing_mode: mode
+                    dialogue_mode: dialogueMode,
+                    routing_mode: mode,
+                    offload_local_llm: offload,
+                    cloud_text_model: cloudModel,
+                    cloud_use_reasoning: useReasoning
                 })
             });
         } catch(e) { console.error(e); }
@@ -355,6 +394,12 @@
             document.getElementById('patient-name').value = data.patient_name || '';
             document.getElementById('caregiver-name').value = data.caregiver_name || '';
             document.getElementById('speaking-speed').value = data.speaking_speed || 'normal';
+            document.getElementById('offload-local-llm').checked = data.offload_local_llm !== false;
+            if (data.cloud_text_model) {
+                document.getElementById('cloud-model').value = data.cloud_text_model;
+            }
+            document.getElementById('cloud-use-reasoning').checked = data.cloud_use_reasoning === true;
+            updateModeButtons(data.dialogue_mode || 'local');
             updateRoutingModeButtons(data.routing_mode || 'local');
         } catch(e) { console.error(e); }
     }
@@ -362,6 +407,10 @@
         const patient = document.getElementById('patient-name').value;
         const caregiver = document.getElementById('caregiver-name').value;
         const speed = document.getElementById('speaking-speed').value;
+        const offload = document.getElementById('offload-local-llm').checked;
+        const cloudModel = document.getElementById('cloud-model').value;
+        const useReasoning = document.getElementById('cloud-use-reasoning').checked;
+        const dialogueMode = getDialogueMode();
         
         const btn = document.getElementById('save-settings-btn');
         const spinner = document.getElementById('settings-spinner');
@@ -382,7 +431,11 @@
                     patient_name: patient,
                     caregiver_name: caregiver,
                     speaking_speed: speed,
-                    routing_mode: currentRoutingMode
+                    dialogue_mode: dialogueMode,
+                    routing_mode: currentRoutingMode,
+                    offload_local_llm: offload,
+                    cloud_text_model: cloudModel,
+                    cloud_use_reasoning: useReasoning
                 })
             });
             await new Promise(r => setTimeout(r, 5000));

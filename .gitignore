@@ -27,6 +27,7 @@ spark_memory.db
 
 # Vector memories / ChromaDB directories
 mimo_chroma_db/
+mimo_chroma_db/*.bin
 chroma_db/
 memory/
 

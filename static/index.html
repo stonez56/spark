@@ -624,6 +624,7 @@
         
         let masterVolume = 0.8;
         let gainNode = null;
+        let mimoSpeakTimeStr = "—";  // Captured when Speaking state starts
 
         function updateVolume(val) {
             masterVolume = parseFloat(val);
@@ -645,9 +646,47 @@
             }
         }
 
-        // Current playback source so we can stop it
-        let currentSource = null;
+        // Current playback source and scheduling parameters for streaming
+        let nextStartTime = 0;
+        let activeSources = [];
+        let currentMimoState = 'Idle';
+        let userSubmitTimeStr = "—";
         let playbackContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 22050 });
+
+        function debugLog(msg) {
+            console.log(msg);
+            fetch('/api/debug-log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: msg })
+            }).catch(e => {});
+        }
+
+        // Resume AudioContext on any user interaction to comply with modern browser autoplay policies.
+        // This ensures the audio context is fully running before any TTS audio chunks are scheduled,
+        // preventing skipped or silent sentences.
+        function forceResumeAudioContext() {
+            if (playbackContext && playbackContext.state === 'suspended') {
+                playbackContext.resume().then(() => {
+                    console.log("AudioContext resumed successfully via user gesture.");
+                }).catch(e => {
+                    console.error("AudioContext resume failed:", e);
+                });
+            }
+        }
+        window.addEventListener('click', forceResumeAudioContext);
+        window.addEventListener('keydown', forceResumeAudioContext);
+        window.addEventListener('mousedown', forceResumeAudioContext);
+        window.addEventListener('touchstart', forceResumeAudioContext);
+
+        function stopAllAudio() {
+            debugLog("stopAllAudio() called. Active sources count: " + activeSources.length + ", currentMimoState: " + currentMimoState);
+            activeSources.forEach(src => {
+                try { src.stop(); } catch (e) {}
+            });
+            activeSources = [];
+            nextStartTime = 0;
+        }
 
         // ── Interactive Dashboard Functions ──
         let localPetCount = 0;
@@ -706,10 +745,21 @@
                     const msg = JSON.parse(event.data);
                     if (msg.type === "state") {
                         const s = msg.value;
+                        if (s !== currentMimoState) {
+                            debugLog("Mimo state transition: " + currentMimoState + " -> " + s);
+                            // stopAllAudio() should fire on Listening/Attentive (wake word interrupt)
+                            // Speaking state filler cutoff is now handled via binary FIFO STOP_SIGNAL
+                            if (s === "Listening" || s === "Attentive") {
+                                stopAllAudio();
+                            }
+                            currentMimoState = s;
+                        }
                         if (s === "Thinking") {
                             thinkingStart = Date.now();
+                            userSubmitTimeStr = getFormattedTime();
                         } else if (s === "Speaking" && thinkingStart) {
                             lastLatency = ((Date.now() - thinkingStart) / 1000).toFixed(2);
+                            mimoSpeakTimeStr = getFormattedTime();  // Mimo timestamp = when Speaking actually starts
                             thinkingStart = null;
                         }
                         
@@ -736,7 +786,12 @@
                         updateModelBadge(msg.mode, msg.model);
                     }
                 } else if (event.data instanceof ArrayBuffer) {
-                    playAudio(event.data);
+                    if (event.data.byteLength <= 4) {
+                        debugLog("Binary STOP signal received. Stopping all audio.");
+                        stopAllAudio();
+                    } else {
+                        await playAudio(event.data);
+                    }
                 }
             };
 
@@ -744,8 +799,19 @@
         }
 
         // ── Audio Playback ─────────────────────────
-        function playAudio(arrayBuffer) {
+        async function playAudio(arrayBuffer) {
+            debugLog("playAudio entered, chunk size: " + arrayBuffer.byteLength + " bytes. State: " + playbackContext.state);
+            // Resume AudioContext if suspended (Chrome suspends it after ~2s of inactivity)
+            if (playbackContext.state === 'suspended') {
+                debugLog("AudioContext is suspended, resuming...");
+                await playbackContext.resume();
+                debugLog("AudioContext resume resolved. New state: " + playbackContext.state);
+            }
             const int16Array = new Int16Array(arrayBuffer);
+            if (int16Array.length === 0) {
+                debugLog("Empty chunk skipped.");
+                return;
+            }
             const float32Array = new Float32Array(int16Array.length);
             for (let i = 0; i < int16Array.length; i++) {
                 float32Array[i] = int16Array[i] / 32768.0;
@@ -753,26 +819,41 @@
             const audioBuffer = playbackContext.createBuffer(1, float32Array.length, 22050);
             audioBuffer.copyToChannel(float32Array, 0);
 
-            if (currentSource) { try { currentSource.stop(); } catch (e) { } }
-            currentSource = playbackContext.createBufferSource();
-            currentSource.buffer = audioBuffer;
+            const source = playbackContext.createBufferSource();
+            source.buffer = audioBuffer;
             
             // Connect to gainNode for real-time master volume control
             if (!gainNode) {
                 gainNode = playbackContext.createGain();
+                gainNode.gain.value = masterVolume;
+                gainNode.connect(playbackContext.destination);
             }
-            gainNode.gain.value = masterVolume;
+            source.connect(gainNode);
             
-            currentSource.connect(gainNode);
-            gainNode.connect(playbackContext.destination);
-            currentSource.start();
+            const now = playbackContext.currentTime;
+            const oldStartTime = nextStartTime;
+            if (nextStartTime < now) {
+                nextStartTime = now + 0.05; // 50ms buffer to prevent jitter
+            }
+            debugLog("Scheduling chunk: nextStartTime=" + nextStartTime.toFixed(3) + " (was " + oldStartTime.toFixed(3) + "), now=" + now.toFixed(3) + ", duration=" + audioBuffer.duration.toFixed(3));
+            
+            source.start(nextStartTime);
+            
+            source.onended = () => {
+                const idx = activeSources.indexOf(source);
+                if (idx > -1) {
+                    activeSources.splice(idx, 1);
+                }
+            };
+            
+            activeSources.push(source);
+            nextStartTime += audioBuffer.duration;
         }
 
         // ── ESC Key → Stop Audio ──────────────────
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && currentSource) {
-                try { currentSource.stop(); } catch (e) { }
-                currentSource = null;
+            if (e.key === 'Escape') {
+                stopAllAudio();
                 // Tell server to stop waiting
                 if (ws && ws.readyState === WebSocket.OPEN) {
                     ws.send(JSON.stringify({ type: 'stop_audio' }));
@@ -808,12 +889,12 @@
             row.innerHTML = `
                 <div class="transcript-user" style="font-size:13px; color:#888;">
                     <span style="color:rgba(0, 255, 255, 0.7); font-weight:600;">You</span> 
-                    <span style="font-size:11px; color:#555; margin-left:6px;">[${timeStr}]</span>: 
+                    <span style="font-size:11px; color:#555; margin-left:6px;">[${userSubmitTimeStr}]</span>: 
                     ${escapeHtml(userText)}
                 </div>
                 <div class="transcript-spark" style="font-size:15px; color:#ddd; margin-top:4px;">
                     <span style="color:#ff7ebb; font-weight:600;">Mimo</span> 
-                    <span style="font-size:11px; color:#555; margin-left:6px;">[${timeStr}]</span>${latencyStr}: 
+                    <span style="font-size:11px; color:#555; margin-left:6px;">[${mimoSpeakTimeStr}]</span>${latencyStr}: 
                     ${escapeHtml(sparkText)}
                 </div>
             `;
@@ -838,6 +919,7 @@
         async function startSpark() {
             if (micStarted) return;  // prevent double-init
             try {
+                forceResumeAudioContext();
                 const mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 micStarted = true;
                 const welcomeSnd = Math.random() < 0.5 ? sndMeow1 : sndMeow2;
