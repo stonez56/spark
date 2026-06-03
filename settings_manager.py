@@ -18,8 +18,11 @@ DEFAULT_SETTINGS = {
     "patient_name": "主人",
     "caregiver_name": get_default_caregiver_name(),
     "speaking_speed": "normal",
+    "dialogue_mode": "local",
     "routing_mode": "local",
-    "offload_local_llm": True
+    "offload_local_llm": True,
+    "cloud_text_model": "openai/gpt-oss-120b:free",
+    "cloud_use_reasoning": False
 }
 
 def load_settings():

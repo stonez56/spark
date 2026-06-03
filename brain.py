@@ -125,8 +125,8 @@ class OllamaBrain:
         settings = settings_manager.load_settings()
         
         # Load active mode from settings.json, falling back to LLM_MODE from config.py
-        self.mode = settings.get("routing_mode", LLM_MODE)
-        self.routing_mode = self.mode
+        self.mode = settings.get("dialogue_mode", LLM_MODE)
+        self.routing_mode = settings.get("routing_mode", "local")
         
         # ── Daily API call counter ──
         self._call_date = date.today()
@@ -134,14 +134,18 @@ class OllamaBrain:
         self.DAILY_LIMIT = 50  # free tier default; set to 1000 if you have $10+ credits
 
         if self.mode == "cloud":
-            self.text_model = CLOUD_TEXT_MODEL
+            # Prefer the model saved in settings.json; fall back to config.py default
+            self.text_model = settings.get("cloud_text_model", CLOUD_TEXT_MODEL)
+            self.use_reasoning = settings.get("cloud_use_reasoning", False)
             self.vision_model = CLOUD_VISION_MODEL
             self._init_cloud_client()
             print(f"[Cloud Mode] Text: {self.text_model}")
             print(f"[Cloud Mode] Vision: {self.vision_model}")
+            print(f"[Cloud Mode] Reasoning: {self.use_reasoning}")
         else:
             self.text_model = LOCAL_TEXT_MODEL
             self.vision_model = LOCAL_VISION_MODEL
+            self.use_reasoning = False
             print(f"[Local Mode] Text: {self.text_model} | Vision: {self.vision_model}")
 
         self.warmup()
@@ -162,7 +166,11 @@ class OllamaBrain:
             settings = settings_manager.load_settings()
             
             if mode == "cloud":
-                self.text_model = CLOUD_TEXT_MODEL
+                # Re-read cloud_text_model from settings.json so user's model choice is respected
+                import settings_manager as _sm
+                _s = _sm.load_settings()
+                self.text_model = _s.get("cloud_text_model", CLOUD_TEXT_MODEL)
+                self.use_reasoning = _s.get("cloud_use_reasoning", False)
                 self._init_cloud_client()
                 
                 # Check if offload option is enabled
@@ -191,11 +199,31 @@ class OllamaBrain:
                     print(f"Error warming up local model: {e}")
             
             # Persist mode change in settings.json so it survives restarts
-            if settings.get("routing_mode") != mode:
-                settings["routing_mode"] = mode
+            if settings.get("dialogue_mode") != mode:
+                settings["dialogue_mode"] = mode
                 settings_manager.save_settings(settings)
                 
             print(f"[Brain Mode] Swapped to {self.mode.upper()} | Model: {self.text_model}")
+
+    def reload_settings(self):
+        """Reload settings from settings.json dynamically at runtime."""
+        import settings_manager
+        settings = settings_manager.load_settings()
+        
+        # Reload dialogue and routing modes
+        self.mode = settings.get("dialogue_mode", LLM_MODE)
+        self.routing_mode = settings.get("routing_mode", "local")
+        
+        # Reload text and vision models
+        if self.mode == "cloud":
+            self.text_model = settings.get("cloud_text_model", CLOUD_TEXT_MODEL)
+            self.use_reasoning = settings.get("cloud_use_reasoning", False)
+            self._init_cloud_client()
+        else:
+            self.text_model = LOCAL_TEXT_MODEL
+            self.use_reasoning = False
+            
+        print(f"[Brain Mode] Settings reloaded. Dialogue Mode: {self.mode.upper()} | Routing Mode: {self.routing_mode.upper()} | Model: {self.text_model} | Reasoning: {getattr(self, 'use_reasoning', False)}")
 
     def _track_call(self, label: str = ""):
         """Increment and display the daily API call counter."""
@@ -429,7 +457,7 @@ class OllamaBrain:
             prompt = (
                 f"你現在是一隻傲嬌卻純潔、關心主人且博學的陪伴貓咪助手。請根據以下過濾後的網頁搜尋結果，用傲嬌貓咪的口吻回答主人的問題：'{query}'。\n"
                 f"【安全紅線】絕對禁止提及、暗示、描述或導向任何色情、不雅、暴力或限制級的網站或內容！如果發現搜尋結果中含有任何不適宜的擦邊球內容，請立刻忽略並以健康、正面、傲嬌的態度回答。\n"
-                f"請保持回答簡短、口語化且精煉，不要使用 Markdown 符號或清單。{lang_rule}\n\n"
+                f"【長度限制】回答字數嚴格控制在60字以內！精簡、口語化，不要使用 Markdown 符號或清單。{lang_rule}\n\n"
                 f"結果來源：\n{search_context}"
             )
             if self.mode == "cloud":

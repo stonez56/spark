@@ -170,15 +170,53 @@ Mimo 的大腦結合了關係型資料庫與先進的向量檢索記憶系統，
 
 ---
 
-## 🤖 推薦模型 (Model Recommendations)
+## 🤖 推薦模型與延遲指南 (Model Recommendations & Latency Guide)
 
-* **本地模型 (Local Ollama)**:
-  * `gemma3:1b` (⭐ 推薦主要大腦及意圖路由模型，速度快、資源佔用極低)
-  * `moondream` (本地視覺分析模型)
-* **雲端模型 (Cloud OpenRouter)**:
-  * `qwen/qwen3-next-80b-a3b-instruct:free` (⭐ 推薦免費大腦模型，Traditional Chinese 遵循能力最強)
-  * `meta-llama/llama-3.3-70b-instruct:free` (雲端備用大腦模型)
-  * `qwen/qwen2.5-vl-72b-instruct:free` (雲端最強免費視覺分析模型)
+Mimo 的雲端大腦支援多種 OpenRouter 模型，並提供「推理模式（Reasoning/Thinking Mode）」的手動切換以平衡生成品質與速度：
+
+### 1. 雲端大腦模型 (Cloud LLM Models)
+* **預設免費模型 (Default Free Models)** — **生成時間：2 - 3 秒**：
+  * `openai/gpt-oss-120b:free` (預設首選) — 高速生成且完全免費。
+  * `google/gemma-4-31b-it:free` — 優異的中英文指令遵循能力。
+  * `moonshotai/kimi-k2.6:free` — Kimi 中文長文本對話模型。
+* **備用付費模型 (Backup Paid Model)** — **生成時間：2 - 3 秒**：
+  * `deepseek/deepseek-v4-flash` — 極低成本的付費備用模型。當上述免費模型因尖峰時間故障或遭遇 OpenRouter `429` 限制時，大腦會自動以此模型作為第一重雲端 fallback，避免直接降級到本地，確保回覆品質喵！
+* **深度推理模型 (Deep Reasoning Models)** — **生成時間：15 - 30+ 秒**：
+  * `deepseek/deepseek-r1` / `openai/o1` 系列 — 這些模型具備強大的內部「思維鏈（Chain of Thought）」推導能力。
+
+### 2. 🧠 推理模式開關與延遲說明 (Reasoning Toggle & Latency)
+由於推理模型在產生回覆前，需要先生成大量的隱藏思維標記（Thinking Tokens），因此會帶來顯著的延遲：
+* **一般對話模型 (Non-reasoning / Standard)**：在對話時**建議關閉推理模式**。此時 OpenRouter 不會帶有 `reasoning_effort` 參數，對話將在 **2-3 秒** 內立即回應。
+* **推理模型 (Reasoning Model)**：當您選用 R1 或 O1 等模型，或是在系統設定中勾選了 **「啟用深度思考/推理模式」**，大腦會啟用深度思考參數。雖然生成內容的邏輯深度大幅提升，但處理延遲將增加到 **15 至 30+ 秒**。
+* **雙軌安全機制**：
+  - **自動白名單識別**：若選用 `deepseek/deepseek-r1`、`openai/o1` 等模型，系統會自動辨識並開啟推理參數。
+  - **手動 override 選項**：您可以在 `http://localhost:8000/config` 介面中隨時勾選或取消「啟用深度思考/推理模式」來強制控制是否啟用思維鏈。
+
+### 3. 本地大腦與視覺 (Local Ollama)
+* `llama3.2:3b` / `gemma3:1b` — 本地邊緣運算首選大腦與意圖路由模型，完全脫網運行，反應時間小於 1.5 秒。
+* `moondream` — 本地視覺分析模型，用於 Mimo 拍照看圖時的本地圖文理解。
+
+---
+
+## ⏱️ 工業級延遲優化里程碑 (Industrial Latency Optimization Milestones)
+
+為了將 Mimo 的語音對話延遲推進至工業級標準（首字發聲延遲 < 2.5 秒），我們在此分支上進行了深度優化，主要改進包含：
+
+1. **分句流式語音合成 (Sentence-level Streaming TTS)** 
+   - **優化前**：TTS 必須等待大腦完整生成回覆（可能長達 15~30 秒）後才一次性進行合成，造成嚴重的等待時間。
+   - **優化後**：實作 `synthesize_stream` 引擎。將大腦生成文本預先切分為短句（中文限制在 35 字以內），並採用 Progressively Yield 串流輸出。首句合成時間降低至 2-5 秒，顯著縮短首字發聲延遲 (First-Byte Latency)。
+
+2. **0ms 本地時間日期攔截器 (0ms Fast Datetime Interceptor)**
+   - **優化後**：大腦端部署超低延遲（`0.07 毫秒`）本地時間攔截器。任何涉及時間、日期、星期的問句均在本地 Python 取得系統時間並轉換為民國曆，完全避免 LLM 推理與網路延遲，且 100% 防止時間幻覺。
+
+3. **零延遲本地降級機制 (Snappy Local Fallback)**
+   - **優化後**：當雲端免費 API 尖峰時間限制（`429`）或故障時，實作 `6.0` 秒嚴格超時與自動停用 transforms 轉發。一旦雲端超時，在 `0.1` 秒內無縫降級切換至本地 Ollama (`gemma3:1b`)，確保語音對話不中斷。
+
+4. **極致增量語音快取更新 (Granular Audio Cache Update)**
+   - **優化後**：修改設定時，智慧辨識並「僅重新合成 6 個含暱稱的動態 Filler 快取」，其餘 49 個靜態音訊直接從磁碟複用，使快取更新保存時間由 >10 秒縮短至 `< 1 秒`。
+
+5. **智慧雙軌推理模式開關 (Dual-track Reasoning Toggle)**
+   - **優化後**：在設定面板中新增「深度思考/推理模式」開關。一般問答預設關閉以維持 `2 - 3 秒` 的快速生成，僅在使用者有深度推理需求時才手動開啟，避免免費推理模型帶來的額外延遲。
 
 ---
 

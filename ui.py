@@ -1,6 +1,22 @@
 import asyncio
 import logging
 import json
+import builtins
+from datetime import datetime
+
+# 全域 print 猴子補丁，保證 UI 子行程的每一行日誌輸出都有高精度的時間戳記，並強制 flush 避免緩衝
+_original_print = builtins.print
+
+def timestamped_print(*args, **kwargs):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    kwargs["flush"] = True
+    if args and isinstance(args[0], str) and (args[0].startswith("[202") or args[0].startswith("[2026-")):
+        _original_print(*args, **kwargs)
+    else:
+        _original_print(f"[{ts}]", *args, **kwargs)
+
+builtins.print = timestamped_print
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
@@ -149,21 +165,43 @@ async def update_settings(payload: dict):
     if "speaking_speed" in payload:
         settings["speaking_speed"] = payload["speaking_speed"]
         
+    if "dialogue_mode" in payload:
+        new_dialogue_mode = payload["dialogue_mode"]
+        if new_dialogue_mode != settings.get("dialogue_mode"):
+            settings["dialogue_mode"] = new_dialogue_mode
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put(new_dialogue_mode)
+
     if "routing_mode" in payload:
         new_routing_mode = payload["routing_mode"]
         if new_routing_mode != settings.get("routing_mode"):
             settings["routing_mode"] = new_routing_mode
+            # Notify the audio orchestrator to reload settings & switch mode
             if hasattr(app.state, 'mode_queue'):
-                app.state.mode_queue.put(new_routing_mode)
+                app.state.mode_queue.put({"type": "settings_update"})
                 
     if "offload_local_llm" in payload:
         new_offload = bool(payload["offload_local_llm"])
         if new_offload != settings.get("offload_local_llm"):
             settings["offload_local_llm"] = new_offload
             # If offloading is turned ON while active mode is cloud, trigger offload immediately
-            if new_offload and settings.get("routing_mode", "local") == "cloud":
+            if new_offload and settings.get("dialogue_mode", "local") == "cloud":
                 if hasattr(app.state, 'command_queue'):
                     app.state.command_queue.put({'type': 'offload_ollama'})
+                    
+    if "cloud_text_model" in payload:
+        new_cloud_model = payload["cloud_text_model"]
+        if new_cloud_model != settings.get("cloud_text_model"):
+            settings["cloud_text_model"] = new_cloud_model
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put({"type": "settings_update"})
+                
+    if "cloud_use_reasoning" in payload:
+        new_reasoning = bool(payload["cloud_use_reasoning"])
+        if new_reasoning != settings.get("cloud_use_reasoning", False):
+            settings["cloud_use_reasoning"] = new_reasoning
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put({"type": "settings_update"})
         
     settings_manager.save_settings(settings)
     
@@ -179,6 +217,12 @@ async def reset_db_endpoint():
         return JSONResponse({"status": "ok", "message": "記憶與資料庫已完全清除喵！"})
     except Exception as e:
         return JSONResponse({"status": "error", "message": f"清除失敗：{str(e)}"}, status_code=500)
+
+
+@app.post("/api/debug-log")
+async def debug_log(payload: dict):
+    print(f"🖥️ [Browser Log] {payload.get('message')}")
+    return JSONResponse({"status": "ok"})
 
 
 
@@ -205,6 +249,7 @@ async def broadcast_transcript(user_text: str, spark_text: str):
 
 
 async def broadcast_audio(audio_bytes: bytes):
+    print(f"[Web UI] Broadcasting {len(audio_bytes)} bytes of audio to clients...")
     for client in list(connected_clients):
         try:
             await client.send_bytes(audio_bytes)
@@ -217,8 +262,12 @@ async def run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, trans
     app.state.mode_queue = mode_queue
     app.state.stop_audio_flag = stop_audio_flag
     app.state.command_queue = command_queue
-    app.state.current_mode = 'local'
-    app.state.current_model = 'gemma3:1b'
+    settings = settings_manager.load_settings()
+    app.state.current_mode = settings.get("dialogue_mode", "local")
+    if app.state.current_mode == "cloud":
+        app.state.current_model = settings.get("cloud_text_model", "openai/gpt-oss-120b:free")
+    else:
+        app.state.current_model = "llama3.2:3b"
 
     config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, log_level="warning")
     server = uvicorn.Server(config)
@@ -244,10 +293,16 @@ async def run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, trans
 
     async def monitor_tts_queue():
         while True:
-            if not tts_queue.empty():
+            # Drain ALL pending audio chunks per iteration to prevent gaps in streaming playback.
+            # A single 50ms sleep with one-item-per-cycle causes silent gaps between TTS chunks.
+            drained = False
+            while not tts_queue.empty():
                 audio_bytes = tts_queue.get()
                 await broadcast_audio(audio_bytes)
-            await asyncio.sleep(0.05)
+                drained = True
+            # If nothing was available, yield control briefly
+            if not drained:
+                await asyncio.sleep(0.01)
 
     async def monitor_transcript_queue():
         while True:

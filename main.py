@@ -1,5 +1,21 @@
 import os
 import warnings
+import builtins
+import time
+from datetime import datetime
+
+# 全域 print 猴子補丁，保證主行程的每一行日誌輸出都有高精度的時間戳記，並強制 flush 避免緩衝
+_original_print = builtins.print
+
+def timestamped_print(*args, **kwargs):
+    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+    kwargs["flush"] = True
+    if args and isinstance(args[0], str) and (args[0].startswith("[202") or args[0].startswith("[2026-")):
+        _original_print(*args, **kwargs)
+    else:
+        _original_print(f"[{ts}]", *args, **kwargs)
+
+builtins.print = timestamped_print
 
 # Environment configurations for Raspberry Pi 5 & clean logging
 os.environ["GPIOZERO_PIN_FACTORY"] = "lgpio"
@@ -9,12 +25,9 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
 warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")
 
-import time
 import threading
-import warnings
 import numpy as np
 from multiprocessing import Process, Queue, Event
-from datetime import datetime
 
 # Suppress onnxruntime CUDAExecutionProvider warnings for Raspberry Pi
 warnings.filterwarnings("ignore", category=UserWarning, module="onnxruntime")
@@ -113,6 +126,58 @@ def get_js_weekday(date_str: str) -> str:
     except Exception:
         return "0,1,2,3,4,5,6"
 
+def play_voice_stream(tts, response, tts_queue, stop_audio_flag):
+    """
+    Stream-synthesizes response text, pushing audio chunks into tts_queue.
+    Correctly waits for the REMAINING PLAYBACK TIME after synthesis completes,
+    which handles Piper running slower-than-real-time on low-end CPUs.
+    """
+    stop_audio_flag.clear()
+    
+    # Send a control packet (1 byte) to signal frontend to stopAllAudio() synchronously
+    tts_queue.put(b'\x02')
+    
+    # 150ms defensive delay: allows the Speaking state WebSocket message to
+    # arrive and be processed by the frontend BEFORE audio chunks start streaming,
+    # preventing the filler audio from being killed.
+    time.sleep(0.15)
+    
+    total_bytes = 0
+    first_chunk_sent_at = None
+
+    chunk_idx = 0
+    for chunk in tts.synthesize_stream(response):
+        if stop_audio_flag.is_set():
+            break
+        print(f"[Orchestrator] Pushing chunk #{chunk_idx} ({len(chunk)} bytes) to tts_queue...")
+        tts_queue.put(chunk)
+        total_bytes += len(chunk)
+        if first_chunk_sent_at is None:
+            first_chunk_sent_at = time.time()  # Record when frontend starts receiving audio
+        chunk_idx += 1
+    
+    if stop_audio_flag.is_set() or first_chunk_sent_at is None:
+        return
+
+    # Calculate how long the audio will play on the frontend.
+    # We anchor from first_chunk_sent_at (not from synthesis start) to correctly
+    # handle the case where Piper synthesizes slower OR faster than real-time.
+    audio_duration = total_bytes / (22050 * 2)
+    # Frontend starts playing ~50ms after receiving first chunk.
+    # Remaining playback time = total duration - time already elapsed since first chunk.
+    elapsed_since_first = time.time() - first_chunk_sent_at
+    remaining_playback = audio_duration - elapsed_since_first + 0.5  # 0.5s safety buffer
+
+    print(f"[{get_timestamp()}] ⏳ Audio duration: {audio_duration:.1f}s | Elapsed since first chunk: {elapsed_since_first:.1f}s | Waiting: {max(remaining_playback, 0):.1f}s")
+
+    if remaining_playback > 0:
+        # Wait for the remaining audio to finish playing on the frontend
+        deadline = time.time() + remaining_playback
+        while time.time() < deadline:
+            if stop_audio_flag.is_set():
+                break
+            time.sleep(0.05)
+
 def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue):
     # Initialize and start OLED first so it shows loading status on SSD1306
     oled_ctrl = OLEDController(sm)
@@ -173,10 +238,16 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
     while True:
         # ── Check for mode-switch commands from UI ──
         if not mode_queue.empty():
-            new_mode = mode_queue.get()
-            if new_mode != brain.mode:
-                brain.set_mode(new_mode)
-                _report_mode(state_queue, brain)
+            item = mode_queue.get()
+            if isinstance(item, dict):
+                if item.get("type") == "settings_update":
+                    brain.reload_settings()
+                    _report_mode(state_queue, brain)
+            else:
+                new_mode = item
+                if new_mode != brain.mode:
+                    brain.set_mode(new_mode)
+                    _report_mode(state_queue, brain)
 
         state = sm.get_state()
 
@@ -191,19 +262,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 
                 sm.transition(SparkState.SPEAKING)
                 state_queue.put(SparkState.SPEAKING)
-                stop_audio_flag.clear()
-                
-                audio_output = tts.synthesize(trigger_sentence)
-                tts_queue.put(audio_output)
-                
-                audio_duration = len(audio_output) / (22050 * 2)
-                elapsed = 0
-                step = 0.05
-                while elapsed < audio_duration:
-                    if stop_audio_flag.is_set():
-                        break
-                    time.sleep(step)
-                    elapsed += step
+                play_voice_stream(tts, trigger_sentence, tts_queue, stop_audio_flag)
                 
                 # After speaking reminder, transition to LISTENING to await response
                 sm.transition(SparkState.LISTENING)
@@ -265,19 +324,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                     
                     sm.transition(SparkState.SPEAKING)
                     state_queue.put(SparkState.SPEAKING)
-                    stop_audio_flag.clear()
-                    
-                    audio_output = tts.synthesize(response)
-                    tts_queue.put(audio_output)
-                    
-                    audio_duration = len(audio_output) / (22050 * 2)
-                    elapsed = 0
-                    step = 0.05
-                    while elapsed < audio_duration:
-                        if stop_audio_flag.is_set():
-                            break
-                        time.sleep(step)
-                        elapsed += step
+                    play_voice_stream(tts, response, tts_queue, stop_audio_flag)
                     
                     sm.transition(SparkState.IDLE)
                     state_queue.put(SparkState.IDLE)
@@ -321,19 +368,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 
                 sm.transition(SparkState.SPEAKING)
                 state_queue.put(SparkState.SPEAKING)
-                stop_audio_flag.clear()
-                
-                audio_output = tts.synthesize(response)
-                tts_queue.put(audio_output)
-                
-                audio_duration = len(audio_output) / (22050 * 2)
-                elapsed = 0
-                step = 0.05
-                while elapsed < audio_duration:
-                    if stop_audio_flag.is_set():
-                        break
-                    time.sleep(step)
-                    elapsed += step
+                play_voice_stream(tts, response, tts_queue, stop_audio_flag)
                 
                 sm.transition(SparkState.IDLE)
                 state_queue.put(SparkState.IDLE)
@@ -374,19 +409,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 
                 sm.transition(SparkState.SPEAKING)
                 state_queue.put(SparkState.SPEAKING)
-                stop_audio_flag.clear()
-                
-                audio_output = tts.synthesize(response)
-                tts_queue.put(audio_output)
-                
-                audio_duration = len(audio_output) / (22050 * 2)
-                elapsed = 0
-                step = 0.05
-                while elapsed < audio_duration:
-                    if stop_audio_flag.is_set():
-                        break
-                    time.sleep(step)
-                    elapsed += step
+                play_voice_stream(tts, response, tts_queue, stop_audio_flag)
                 
                 sm.transition(SparkState.IDLE)
                 state_queue.put(SparkState.IDLE)
@@ -490,8 +513,9 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         tts_queue.put(filler_bytes)
 
                     full_audio = np.concatenate(stt_buffer)
+                    print(f"[{get_timestamp()}] ── ASR START ─────────────────────────")
                     transcription = stt.transcribe(full_audio)
-                    print(f"[{get_timestamp()}] User: {transcription}")
+                    print(f"[{get_timestamp()}] 🎤 User said  : {transcription}")
 
                     import re
                     cleaned_text = ""
@@ -515,6 +539,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                     if transcription:
                         # Always route the intent first to check if user has shifted topics or issued a new command
                         routed_action = brain.route_intent(transcription)
+                        print(f"[{get_timestamp()}] 🔀 Intent     : {routed_action}")
                         
                         if pending_reminder is not None:
                             # If they explicitly want to swap model, ask for datetime, trigger emergency, take photo, etc.
@@ -533,7 +558,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                                 action = "add_reminder_followup"
                         else:
                             action = routed_action
-                        print(f"[{get_timestamp()}] Decided action: {action}")
+                        print(f"[{get_timestamp()}] ✅ Decided    : {action}")
 
                         if action in ["chat", "health_query", "daily_checkin", "reminiscence", "praise_affirmation", "emotional_support", "datetime"]:
                             context = memory.retrieve_context(transcription)
@@ -647,29 +672,19 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         else:
                             response = "我不太確定該怎麼做，您可以再說一次嗎？"
 
-                        print(f"[{get_timestamp()}] Spark [{brain.mode.upper()} | {brain.text_model}]: {response}")
+                        print(f"[{get_timestamp()}] 💬 Mimo says  : {response}")
+                        print(f"[{get_timestamp()}] ── TTS START ─────────────────────────")
 
-                        # Send transcript to UI
-                        transcript_queue.put((transcription, response))
-
-                        # TTS
+                        # ── Dispatch to UI: Send Speaking state FIRST so frontend sets mimoSpeakTimeStr,
+                        # then send transcript so updateTranscript() uses the correct Mimo timestamp.
                         sm.transition(SparkState.SPEAKING)
                         state_queue.put(SparkState.SPEAKING)
+                        print(f"[{get_timestamp()}] 🔊 Speaking ({brain.mode.upper()} | {brain.text_model})")
 
-                        stop_audio_flag.clear()
-                        audio_output = tts.synthesize(response)
-                        tts_queue.put(audio_output)
-
-                        # Wait for audio duration, but allow ESC to interrupt
-                        audio_duration = len(audio_output) / (22050 * 2)
-                        elapsed = 0
-                        step = 0.05
-                        while elapsed < audio_duration:
-                            if stop_audio_flag.is_set():
-                                print("Audio stopped by user (ESC).")
-                                break
-                            time.sleep(step)
-                            elapsed += step
+                        # Send transcript to UI (AFTER Speaking state — frontend needs mimoSpeakTimeStr set first)
+                        transcript_queue.put((transcription, response))
+                        play_voice_stream(tts, response, tts_queue, stop_audio_flag)
+                        print(f"[{get_timestamp()}] ✅ TTS Done   : playback finished")
 
                     # Flush stale audio
                     while not audio_queue.empty():
@@ -811,9 +826,6 @@ def main():
             ui_process.terminate()
             ui_process.join()
 
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()

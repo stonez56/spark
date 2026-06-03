@@ -21,7 +21,7 @@ class SparkSTT:
             beam_size=3,
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
-            initial_prompt="以下是繁體中文的對話，使用台灣繁體字形，避免簡體字。"
+            initial_prompt="幫我寫一封信，元智大學，元培科技大學，提醒我，搜尋，本喵，小白，微軟，訂閱費，寫信，拍照，設定鬧鐘，記得，中華民國，民國。以下是繁體中文的對話，使用台灣繁體字形，避免簡體字。"
         )
         
         text = ""

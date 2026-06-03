@@ -44,5 +44,5 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 
 # ── Cloud TEXT & VISION models (using OpenRouter API) ──────────────────
-CLOUD_TEXT_MODEL   = "deepseek/deepseek-v4-flash"
+CLOUD_TEXT_MODEL   = "openai/gpt-oss-120b:free"
 CLOUD_VISION_MODEL = "moondream"
