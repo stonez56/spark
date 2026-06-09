@@ -21,7 +21,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: flex-start;
-            min-height: 100vh;
+            height: 100vh;
             width: 100vw;
             font-family: "Inter", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
             color: #e0e0e0;
@@ -106,6 +106,7 @@
             width: 100%;
             max-width: 800px;
             flex: 1;
+            min-height: 0;
             justify-content: center;
         }
 
@@ -348,10 +349,27 @@
             border-radius: 16px;
             padding: 16px 20px;
             min-height: 90px;
-            max-height: 25%;
+            max-height: 180px;
             overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.35) rgba(255, 255, 255, 0.02);
             transition: all 0.4s ease;
             margin-bottom: 15px;
+        }
+
+        #transcript-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+        #transcript-panel::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+        }
+        #transcript-panel::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.35);
+            border-radius: 4px;
+        }
+        #transcript-panel::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.6);
         }
 
         .transcript-row {
@@ -495,6 +513,24 @@
         @keyframes loading-bar-slide {
             0% { left: -70px; }
             100% { left: 250px; }
+        }
+
+        /* Responsive adjustments for smaller screen heights */
+        @media (max-height: 750px) {
+            #face-container {
+                max-width: 500px;
+            }
+            #transcript-panel {
+                max-height: 140px;
+            }
+        }
+        @media (max-height: 600px) {
+            #face-container {
+                max-width: 400px;
+            }
+            #transcript-panel {
+                max-height: 100px;
+            }
         }
     </style>
 </head>
@@ -750,7 +786,7 @@
                                 debugLog("Mimo state transition: " + currentMimoState + " -> " + s);
                                 // stopAllAudio() should fire on Listening/Attentive (wake word interrupt)
                                 // Speaking state filler cutoff is now handled via binary FIFO STOP_SIGNAL
-                                if (s === "Listening" || s === "Attentive") {
+                                if (s === "Listening" || s === "Attentive" || s === "Idle") {
                                     stopAllAudio();
                                 }
                                 currentMimoState = s;
@@ -888,11 +924,18 @@
                 panel.innerHTML = '';
             }
             
-            const row = document.createElement('div');
-            row.className = 'transcript-row';
-            row.style.marginBottom = '12px';
-            row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
-            row.style.paddingBottom = '8px';
+            // Try to find an existing row for this turn
+            let row = panel.querySelector(`[data-turn="${userSubmitTimeStr}"]`);
+            if (!row) {
+                // If it doesn't exist, create it
+                row = document.createElement('div');
+                row.className = 'transcript-row';
+                row.setAttribute('data-turn', userSubmitTimeStr);
+                row.style.marginBottom = '12px';
+                row.style.borderBottom = '1px solid rgba(255,255,255,0.03)';
+                row.style.paddingBottom = '8px';
+                panel.appendChild(row);
+            }
             
             row.innerHTML = `
                 <div class="transcript-user" style="font-size:13px; color:#888;">
@@ -906,8 +949,9 @@
                     ${escapeHtml(sparkText)}
                 </div>
             `;
-            panel.appendChild(row);
-            panel.scrollTop = panel.scrollHeight;
+            setTimeout(() => {
+                panel.scrollTop = panel.scrollHeight;
+            }, 50);
         }
 
         function escapeHtml(str) {

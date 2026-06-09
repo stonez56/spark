@@ -192,18 +192,13 @@
             <button class="mode-btn active-local" id="btn-local" onclick="setMode('local')">⚡ Local 邊緣運算</button>
             <button class="mode-btn" id="btn-cloud" onclick="setMode('cloud')">☁ Cloud 雲端大模型</button>
         </div>
-        <div class="form-group" id="cloud-model-group" style="margin-top: 15px; display: none;">
-            <label for="cloud-model" style="font-size: 14px; color: #aaa;">☁️ 雲端模型選擇 (Cloud Model Select)</label>
-            <select id="cloud-model" onchange="saveSettings()" style="width:100%; padding:10px; background:#1c1c24; border:1px solid rgba(255,255,255,0.15); color:#fff; border-radius:6px; font-size:14px; font-family:'Inter'; outline:none; transition: border-color 0.2s;">
-                <option value="openai/gpt-oss-120b:free">openai/gpt-oss-120b (Free)</option>
-                <option value="google/gemma-4-31b-it:free">google/gemma-4-31b-it (Free)</option>
-                <option value="moonshotai/kimi-k2.6:free">moonshotai/kimi-k2.6 (Free)</option>
-                <option value="deepseek/deepseek-v4-flash">deepseek/deepseek-v4-flash (Paid)</option>
+        <div class="form-group" style="margin-top: 15px;">
+            <label for="search-rewrite-mode" style="font-size: 14px; color: #aaa;">🔍 搜尋字詞改寫模式 (Search Query Rewrite Mode)</label>
+            <select id="search-rewrite-mode" onchange="saveSettings()" style="width:100%; padding:10px; background:#1c1c24; border:1px solid rgba(255,255,255,0.15); color:#fff; border-radius:6px; font-size:14px; font-family:'Inter'; outline:none; transition: border-color 0.2s;">
+                <option value="legacy">⚡ 規則快篩 (0ms 延遲，快速過濾贅詞)</option>
+                <option value="local_llm">🤖 本地 LLM 改寫 (使用本機模型，無網路延遲)</option>
+                <option value="cloud_llm">☁️ 雲端 LLM 改寫 (精準理解，受限於網路延遲)</option>
             </select>
-        </div>
-        <div class="form-group" id="cloud-reasoning-group" style="margin-top: 15px; display: none; flex-direction: row; align-items: center; gap: 8px;">
-            <input type="checkbox" id="cloud-use-reasoning" onchange="saveSettings()" style="width: 18px; height: 18px; cursor: pointer; accent-color: #00ffff;">
-            <label for="cloud-use-reasoning" style="cursor: pointer; font-size: 14px; color: #ddd; user-select: none;">🧠 啟用深度思考/推理模式 (適合 R1 等推理模型，會增加延遲)</label>
         </div>
     </div>
 
@@ -216,6 +211,27 @@
         <div class="mode-buttons">
             <button class="mode-btn active-local" id="btn-routing-local" onclick="setRoutingMode('local')">⚡ Local 邊緣運算</button>
             <button class="mode-btn" id="btn-routing-cloud" onclick="setRoutingMode('cloud')">☁ Cloud 雲端大模型</button>
+        </div>
+    </div>
+
+    <!-- Cloud Model Settings -->
+    <div class="panel">
+        <h2>☁️ 雲端模型設定 (Cloud Model Settings)</h2>
+        <p style="font-size: 13px; color: #888; margin-bottom: 12px; line-height: 1.4;">
+            設定大腦對話、意圖辨識或搜尋改寫在使用「雲端」模式時的 API 模型與推理參數。
+        </p>
+        <div class="form-group" id="cloud-model-group" style="margin-top: 15px;">
+            <label for="cloud-model" style="font-size: 14px; color: #aaa;">☁️ 雲端模型選擇 (Cloud Model Select)</label>
+            <select id="cloud-model" onchange="saveSettings()" style="width:100%; padding:10px; background:#1c1c24; border:1px solid rgba(255,255,255,0.15); color:#fff; border-radius:6px; font-size:14px; font-family:'Inter'; outline:none; transition: border-color 0.2s;">
+                <option value="openai/gpt-oss-120b:free">openai/gpt-oss-120b (Free)</option>
+                <option value="google/gemma-4-31b-it:free">google/gemma-4-31b-it (Free)</option>
+                <option value="moonshotai/kimi-k2.6:free">moonshotai/kimi-k2.6 (Free)</option>
+                <option value="deepseek/deepseek-v4-flash">deepseek/deepseek-v4-flash (Paid)</option>
+            </select>
+        </div>
+        <div class="form-group" id="cloud-reasoning-group" style="margin-top: 15px; display: flex; flex-direction: row; align-items: center; gap: 8px;">
+            <input type="checkbox" id="cloud-use-reasoning" onchange="saveSettings()" style="width: 18px; height: 18px; cursor: pointer; accent-color: #00ffff;">
+            <label for="cloud-use-reasoning" style="cursor: pointer; font-size: 14px; color: #ddd; user-select: none;">🧠 啟用深度思考/推理模式 (適合 R1 等推理模型，會增加延遲)</label>
         </div>
     </div>
 
@@ -369,16 +385,6 @@
     function updateModeButtons(mode) {
         document.getElementById('btn-local').className = 'mode-btn' + (mode==='local' ? ' active-local' : '');
         document.getElementById('btn-cloud').className = 'mode-btn' + (mode==='cloud' ? ' active-cloud' : '');
-        
-        // Show/hide cloud model selection based on active mode
-        const cloudModelGroup = document.getElementById('cloud-model-group');
-        if (cloudModelGroup) {
-            cloudModelGroup.style.display = mode === 'cloud' ? 'block' : 'none';
-        }
-        const cloudReasoningGroup = document.getElementById('cloud-reasoning-group');
-        if (cloudReasoningGroup) {
-            cloudReasoningGroup.style.display = mode === 'cloud' ? 'flex' : 'none';
-        }
     }
 
     function getDialogueMode() {
@@ -403,6 +409,7 @@
             const offload = document.getElementById('offload-local-llm').checked;
             const cloudModel = document.getElementById('cloud-model').value;
             const useReasoning = document.getElementById('cloud-use-reasoning').checked;
+            const rewriteMode = document.getElementById('search-rewrite-mode').value;
             const dialogueMode = getDialogueMode();
             
             await fetch('/api/settings', {
@@ -416,7 +423,8 @@
                     routing_mode: mode,
                     offload_local_llm: offload,
                     cloud_text_model: cloudModel,
-                    cloud_use_reasoning: useReasoning
+                    cloud_use_reasoning: useReasoning,
+                    search_rewrite_mode: rewriteMode
                 })
             });
         } catch(e) { console.error(e); }
@@ -434,6 +442,9 @@
                 document.getElementById('cloud-model').value = data.cloud_text_model;
             }
             document.getElementById('cloud-use-reasoning').checked = data.cloud_use_reasoning === true;
+            if (data.search_rewrite_mode) {
+                document.getElementById('search-rewrite-mode').value = data.search_rewrite_mode;
+            }
             updateModeButtons(data.dialogue_mode || 'local');
             updateRoutingModeButtons(data.routing_mode || 'local');
         } catch(e) { console.error(e); }
@@ -445,6 +456,7 @@
         const offload = document.getElementById('offload-local-llm').checked;
         const cloudModel = document.getElementById('cloud-model').value;
         const useReasoning = document.getElementById('cloud-use-reasoning').checked;
+        const rewriteMode = document.getElementById('search-rewrite-mode').value;
         const dialogueMode = getDialogueMode();
         
         const btn = document.getElementById('save-settings-btn');
@@ -470,7 +482,8 @@
                     routing_mode: currentRoutingMode,
                     offload_local_llm: offload,
                     cloud_text_model: cloudModel,
-                    cloud_use_reasoning: useReasoning
+                    cloud_use_reasoning: useReasoning,
+                    search_rewrite_mode: rewriteMode
                 })
             });
             await new Promise(r => setTimeout(r, 5000));

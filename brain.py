@@ -204,6 +204,13 @@ class OllamaBrain:
         self._call_count = 0
         self.DAILY_LIMIT = 50  # free tier default; set to 1000 if you have $10+ credits
 
+        # ── Session boundary timestamp ──────────────────────────────────────
+        # Recorded once at startup. Used to exclude cross-session conversation
+        # history when inferring the active city for location-aware searches.
+        self._session_start = datetime.now().isoformat()
+
+        self.search_rewrite_mode = settings.get("search_rewrite_mode", "legacy")
+
         if self.mode == "cloud":
             # Prefer the model saved in settings.json; fall back to config.py default
             self.text_model = settings.get("cloud_text_model", CLOUD_TEXT_MODEL)
@@ -213,11 +220,13 @@ class OllamaBrain:
             print(f"[Cloud Mode] Text: {self.text_model}")
             print(f"[Cloud Mode] Vision: {self.vision_model}")
             print(f"[Cloud Mode] Reasoning: {self.use_reasoning}")
+            print(f"[Cloud Mode] Search Rewrite Mode: {self.search_rewrite_mode}")
         else:
             self.text_model = LOCAL_TEXT_MODEL
             self.vision_model = LOCAL_VISION_MODEL
             self.use_reasoning = False
             print(f"[Local Mode] Text: {self.text_model} | Vision: {self.vision_model}")
+            print(f"[Local Mode] Search Rewrite Mode: {self.search_rewrite_mode}")
 
         self.warmup()
 
@@ -281,9 +290,10 @@ class OllamaBrain:
         import settings_manager
         settings = settings_manager.load_settings()
         
-        # Reload dialogue and routing modes
+        # Reload dialogue, routing, and search rewrite modes
         self.mode = settings.get("dialogue_mode", LLM_MODE)
         self.routing_mode = settings.get("routing_mode", "local")
+        self.search_rewrite_mode = settings.get("search_rewrite_mode", "legacy")
         
         # Reload text and vision models
         if self.mode == "cloud":
@@ -294,7 +304,7 @@ class OllamaBrain:
             self.text_model = LOCAL_TEXT_MODEL
             self.use_reasoning = False
             
-        print(f"[Brain Mode] Settings reloaded. Dialogue Mode: {self.mode.upper()} | Routing Mode: {self.routing_mode.upper()} | Model: {self.text_model} | Reasoning: {getattr(self, 'use_reasoning', False)}")
+        print(f"[Brain Mode] Settings reloaded. Dialogue Mode: {self.mode.upper()} | Routing Mode: {self.routing_mode.upper()} | Search Rewrite Mode: {self.search_rewrite_mode.upper()} | Model: {self.text_model} | Reasoning: {getattr(self, 'use_reasoning', False)}")
 
     def _track_call(self, label: str = ""):
         """Increment and display the daily API call counter."""
@@ -316,6 +326,14 @@ class OllamaBrain:
         Snappily falls back to local Ollama immediately if rate-limited (429), not found (404),
         or if any cloud call fails, avoiding slow retry loops."""
         primary_model = self.text_model
+        if self.mode == "local" or primary_model == LOCAL_TEXT_MODEL:
+            import settings_manager
+            _s = settings_manager.load_settings()
+            primary_model = _s.get("cloud_text_model", CLOUD_TEXT_MODEL)
+
+        if not hasattr(self, "_cloud_client") or self._cloud_client is None:
+            self._init_cloud_client()
+
         last_error = None
 
         extra_body = {}
@@ -514,8 +532,14 @@ class OllamaBrain:
 
     def refine_search_query(self, query: str) -> str:
         """
-        Refines conversational raw queries into clean, highly-targeted search engine keywords using the LLM.
+        Refines conversational raw queries into clean, highly-targeted search engine keywords.
+        Supports legacy rule-based refiner, local LLM, or cloud LLM based on search_rewrite_mode.
         """
+        mode = getattr(self, 'search_rewrite_mode', 'legacy')
+        if mode == 'legacy':
+            print(f"[{get_timestamp()}] [Brain Query Rewrite] Bypassing LLM rewrite. Using legacy rule-based refiner.")
+            return legacy_refine_search_query(query)
+
         prompt = (
             "你是一個搜尋引擎關鍵字改寫專家。\n"
             "請將使用者口語化的輸入改寫成適合搜尋引擎（如 DuckDuckGo）的關鍵字（不超過 5 個詞，以空格分隔，純名詞/關鍵字，不要有問號或贅詞如「如何」、「怎樣」、「幫我」、「謝謝」、「今天」、「今年」、「的」）。\n"
@@ -536,11 +560,15 @@ class OllamaBrain:
             "輸出："
         )
         try:
-            print(f"[{get_timestamp()}] [Brain Query Rewrite] Rewriting query '{query}' using LLM (mode: {self.mode})...")
-            if self.mode == "cloud":
-                res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low")
+            print(f"[{get_timestamp()}] [Brain Query Rewrite] Rewriting query '{query}' using LLM (mode: {mode})...")
+            if mode == "local_llm":
+                res = self._local_generate(prompt, model=LOCAL_TEXT_MODEL, options={"num_predict": 30, "temperature": 0.1})
             else:
-                res = self._local_generate(prompt, options={"num_predict": 30, "temperature": 0.1})
+                # cloud_llm
+                if self.mode == "cloud":
+                    res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low")
+                else:
+                    res = self._local_generate(prompt, options={"num_predict": 30, "temperature": 0.1})
             
             # Clean up response
             res = res.strip().replace("「", "").replace("」", "").replace("\"", "").replace("'", "")
@@ -577,6 +605,40 @@ class OllamaBrain:
         search_target = self.refine_search_query(query)
         print(f"[Brain Search Web] Refined query: '{query}' -> '{search_target}'")
 
+        # ── Priority 1: Weather queries → CWA Open Data API ─────────────────
+        # CWA provides structured, authoritative real-time forecast data.
+        # This completely bypasses DDG web search for weather intent, avoiding
+        # the "found only historical/travel articles" failure mode.
+        try:
+            import weather as weather_mod
+            if weather_mod.is_weather_query(query):
+                import location_manager, settings_manager as _sm
+                loc = location_manager.get_location()
+                city = loc.get("city", "") or _sm.load_settings().get("city", "新竹市")
+                print(f"[Brain Weather] Detected weather query. Fetching CWA data for '{city}'...")
+                cwa_data = weather_mod.get_weather(city)
+                if cwa_data:
+                    weather_summary = weather_mod.format_weather_for_llm(cwa_data)
+                    print(f"[Brain Weather] CWA data OK:\n{weather_summary}")
+                    prompt = prompts.get_weather_prompt(query, cwa_data["city"], weather_summary)
+                    if self.mode == "cloud":
+                        res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low", stream=stream)
+                    else:
+                        res = self._local_generate(prompt, options={"num_predict": 200, "temperature": 0.5, "repeat_penalty": 1.1}, stream=stream)
+                    if stream:
+                        def _clean_cwa_stream():
+                            for chunk in res:
+                                yield clean_traditional_chinese(chunk)
+                        return _clean_cwa_stream()
+                    else:
+                        return clean_traditional_chinese(res)
+                else:
+                    print(f"[Brain Weather] CWA API returned no data for '{city}'. Falling back to DDG.")
+        except Exception as _we:
+            print(f"[Brain Weather] CWA weather module error: {_we}. Falling back to DDG.")
+
+
+
         # 3. 在地化搜尋詞自動補全：結合對話話題定位或本地物理定位
         try:
             import location_manager
@@ -591,15 +653,18 @@ class OllamaBrain:
                 district = _s.get("district", "")
 
             taiwan_cities = ["台北", "新北", "基隆", "桃園", "新竹", "苗栗", "台中", "彰化", "南投", "雲林", "嘉義", "台南", "高雄", "屏東", "宜蘭", "花蓮", "台東", "澎湖", "金門", "馬祖"]
-            active_city = city
+            active_city = city  # default: GPS/settings city
 
-            
-            # 從對話歷史偵測當前討論的縣市話題
+            # ── Scan current-session history ONLY for city topic ────────────
+            # We deliberately scope to self._session_start so that a previous
+            # session discussing 桃園 doesn't pollute a fresh boot asking about
+            # the user's actual location (新竹). Cross-session bleed was the
+            # cause of "桃園天氣" when the user's GPS shows 新竹.
             try:
                 from memory import MimoMemory
                 memory = MimoMemory()
-                history = memory.get_recent_history(limit=2)
-                for user_input, spark_response in history:
+                session_history = memory.get_recent_history_since(self._session_start, limit=10)
+                for user_input, spark_response in session_history:
                     found = False
                     for tc in taiwan_cities:
                         if tc in user_input or tc in spark_response:
@@ -608,8 +673,12 @@ class OllamaBrain:
                             break
                     if found:
                         break
+                if active_city != city:
+                    print(f"[Brain Search Web] Session city override: '{city}' -> '{active_city}' (from current-session history)")
+                else:
+                    print(f"[Brain Search Web] Using GPS city: '{city}' (no city found in current-session history)")
             except Exception as ex:
-                print(f"Error scanning history for active city: {ex}")
+                print(f"Error scanning session history for active city: {ex}")
                 
             location_prefix = active_city
             if active_city == city and district:
@@ -630,7 +699,7 @@ class OllamaBrain:
         try:
             from ddgs import DDGS
             with DDGS() as ddgs:
-                results = list(ddgs.text(search_target, region='tw-tz', max_results=5))
+                results = list(ddgs.text(search_target, region='tw-zh', max_results=5))
 
             if not results:
                 return "我無法在網路上找到相關資訊。"
@@ -669,7 +738,7 @@ class OllamaBrain:
             if self.mode == "cloud":
                 res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high", stream=stream)
             else:
-                res = self._local_generate(prompt, stream=stream)
+                res = self._local_generate(prompt, options={"num_predict": 250, "temperature": 0.4, "repeat_penalty": 1.1}, stream=stream)
             
             if stream:
                 def clean_stream():
@@ -935,11 +1004,11 @@ class OllamaBrain:
                     messages.append({"role": "assistant", "content": f"Context: {context_history}"})
                 
                 # Dialogue task vs. Logic/knowledge task distinction
-                if is_knowledge_query:
+                if is_knowledge_query and self.use_reasoning:
                     reasoning_effort = "high"
                     messages.append({"role": "user", "content": prompt})
                 else:
-                    reasoning_effort = "low"
+                    reasoning_effort = "low" if self.use_reasoning else None
                     short_prompt = f"{prompt}\n(極簡答：請以傲嬌貓咪口氣直接回覆，嚴禁冗長思考與推導。)"
                     messages.append({"role": "user", "content": short_prompt})
                 
@@ -950,7 +1019,7 @@ class OllamaBrain:
                     full_prompt = f"Previous Context:\n{context_history}\n\n" + full_prompt
                 
                 # 依據 prompt 屬性決定 local 生成的最大 token 限制，強防重複退化死循環
-                limit_predict = 180 if is_knowledge_query else 60
+                limit_predict = 250 if is_knowledge_query else 120
                 res = self._local_generate(
                     full_prompt,
                     options={"temperature": 0.4, "repeat_penalty": 1.05, "num_predict": limit_predict},

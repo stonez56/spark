@@ -21,11 +21,25 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/")
 async def get_index():
-    return FileResponse("static/index.html")
+    return FileResponse(
+        "static/index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 @app.get("/config")
 async def get_config():
-    return FileResponse("static/config.html")
+    return FileResponse(
+        "static/config.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0"
+        }
+    )
 
 # Keep track of connected websocket clients
 connected_clients = set()
@@ -191,6 +205,13 @@ async def update_settings(payload: dict):
         new_reasoning = bool(payload["cloud_use_reasoning"])
         if new_reasoning != settings.get("cloud_use_reasoning", False):
             settings["cloud_use_reasoning"] = new_reasoning
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put({"type": "settings_update"})
+                
+    if "search_rewrite_mode" in payload:
+        new_rewrite_mode = payload["search_rewrite_mode"]
+        if new_rewrite_mode != settings.get("search_rewrite_mode"):
+            settings["search_rewrite_mode"] = new_rewrite_mode
             if hasattr(app.state, 'mode_queue'):
                 app.state.mode_queue.put({"type": "settings_update"})
         

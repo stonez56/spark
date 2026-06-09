@@ -102,6 +102,24 @@ class MimoMemory:
             print(f"Error retrieving recent history: {e}")
             return []
 
+    def get_recent_history_since(self, since_iso: str, limit: int = 6):
+        """Retrieve conversation history rows written AFTER since_iso (session boundary).
+        Used to prevent cross-session city-context bleed: only rows from the current
+        boot session are eligible for city-topic inference.
+        """
+        try:
+            self.cursor.execute(
+                "SELECT user_input, spark_response FROM conversation_history "
+                "WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ?",
+                (since_iso, limit)
+            )
+            return self.cursor.fetchall()
+        except Exception as e:
+            print(f"Error retrieving session history: {e}")
+            return []
+
+
+
     def save_context_keywords(self, text_list_or_str):
         """Extract valid keywords from text list or string and save them to SQLite context table."""
         if not text_list_or_str:

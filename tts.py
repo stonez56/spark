@@ -81,16 +81,64 @@ class SparkTTS:
 
         return [c.strip() for c in result if c.strip()]
 
+    # ── Unit / abbreviation → Chinese substitution (applied before lang split) ──
+    # Key insight: these patterns must be resolved BEFORE _build_bilingual_segments()
+    # so the bilingual splitter never sees lone English letters and creates jarring
+    # voice-switch artefacts (e.g. "十八° [EN:C] 到二十二° [EN:C]").
+    UNIT_SUBS = [
+        # Temperature — must come before bare letter rules
+        (re.compile(r'°C', re.IGNORECASE), '度'),
+        (re.compile(r'°F', re.IGNORECASE), '華氏度'),
+        (re.compile(r'°K', re.IGNORECASE), '克耳文'),
+        # Percentage / degree symbols standing alone
+        (re.compile(r'°'),                 '度'),
+        # Speed / distance
+        (re.compile(r'\bkm/h\b', re.IGNORECASE), '公里每小時'),
+        (re.compile(r'\bkm\b',   re.IGNORECASE), '公里'),
+        (re.compile(r'\bm/s\b',  re.IGNORECASE), '公尺每秒'),
+        (re.compile(r'\bcm\b',   re.IGNORECASE), '公分'),
+        (re.compile(r'\bmm\b',   re.IGNORECASE), '毫米'),
+        (re.compile(r'\bkg\b',   re.IGNORECASE), '公斤'),
+        (re.compile(r'\bmg\b',   re.IGNORECASE), '毫克'),
+        (re.compile(r'\bgb\b',   re.IGNORECASE), '吉位元組'),
+        (re.compile(r'\bmb\b',   re.IGNORECASE), '百萬位元組'),
+        (re.compile(r'\btb\b',   re.IGNORECASE), '兆位元組'),
+        # Connectivity
+        (re.compile(r'\bWiFi\b', re.IGNORECASE), '無線網路'),
+        (re.compile(r'\bBluetooth\b', re.IGNORECASE), '藍牙'),
+        (re.compile(r'\bUSB\b',  re.IGNORECASE), '通用序列匯流排'),
+        (re.compile(r'\bHDMI\b', re.IGNORECASE), '高清晰度多媒體介面'),
+        (re.compile(r'\bGPS\b',  re.IGNORECASE), '全球定位系統'),
+        # Acidity
+        (re.compile(r'\bpH\b',   re.IGNORECASE), '酸鹼值'),
+        # Single capital letters used as units / abbreviations that must stay Chinese-voice:
+        # A lonely uppercase C/F/K after a digit (e.g. "22C" after number conversion)
+        (re.compile(r'(?<=\d)C\b'), '度'),
+        (re.compile(r'(?<=\d)F\b'), '華氏度'),
+    ]
+
     def _preprocess_text(self, text: str) -> str:
-        """Apply eng->zh word substitution and number conversion."""
+        """Apply unit substitution, eng→zh word substitution and number conversion.
+        Unit substitution runs FIRST so that tokens like '°C' are fully resolved
+        to Chinese before the bilingual language splitter sees the text."""
         translated = text
+
+        # 1. Unit / symbol substitutions (most important — prevents voice switching)
+        for pattern, replacement in self.UNIT_SUBS:
+            translated = pattern.sub(replacement, translated)
+
+        # 2. Common English word → Chinese word substitution
         for eng, zh in self.eng_to_zh.items():
             pattern = re.compile(r'\b' + re.escape(eng) + r'\b', re.IGNORECASE)
             translated = pattern.sub(zh, translated)
+
+        # 3. Arabic numeral → Traditional Chinese spoken word conversion
         translated = self._convert_numbers_to_zh(translated)
+
         if translated != text:
             print(f"[TTS Preprocess] '{text}' -> '{translated}'")
         return translated
+
 
     def _build_bilingual_segments(self, text: str) -> list:
         """
