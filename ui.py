@@ -193,6 +193,13 @@ async def update_settings(payload: dict):
             settings["cloud_use_reasoning"] = new_reasoning
             if hasattr(app.state, 'mode_queue'):
                 app.state.mode_queue.put({"type": "settings_update"})
+                
+    if "search_rewrite_mode" in payload:
+        new_rewrite_mode = payload["search_rewrite_mode"]
+        if new_rewrite_mode != settings.get("search_rewrite_mode"):
+            settings["search_rewrite_mode"] = new_rewrite_mode
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put({"type": "settings_update"})
         
     settings_manager.save_settings(settings)
     

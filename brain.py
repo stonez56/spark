@@ -204,6 +204,8 @@ class OllamaBrain:
         self._call_count = 0
         self.DAILY_LIMIT = 50  # free tier default; set to 1000 if you have $10+ credits
 
+        self.search_rewrite_mode = settings.get("search_rewrite_mode", "legacy")
+
         if self.mode == "cloud":
             # Prefer the model saved in settings.json; fall back to config.py default
             self.text_model = settings.get("cloud_text_model", CLOUD_TEXT_MODEL)
@@ -213,11 +215,13 @@ class OllamaBrain:
             print(f"[Cloud Mode] Text: {self.text_model}")
             print(f"[Cloud Mode] Vision: {self.vision_model}")
             print(f"[Cloud Mode] Reasoning: {self.use_reasoning}")
+            print(f"[Cloud Mode] Search Rewrite Mode: {self.search_rewrite_mode}")
         else:
             self.text_model = LOCAL_TEXT_MODEL
             self.vision_model = LOCAL_VISION_MODEL
             self.use_reasoning = False
             print(f"[Local Mode] Text: {self.text_model} | Vision: {self.vision_model}")
+            print(f"[Local Mode] Search Rewrite Mode: {self.search_rewrite_mode}")
 
         self.warmup()
 
@@ -281,9 +285,10 @@ class OllamaBrain:
         import settings_manager
         settings = settings_manager.load_settings()
         
-        # Reload dialogue and routing modes
+        # Reload dialogue, routing, and search rewrite modes
         self.mode = settings.get("dialogue_mode", LLM_MODE)
         self.routing_mode = settings.get("routing_mode", "local")
+        self.search_rewrite_mode = settings.get("search_rewrite_mode", "legacy")
         
         # Reload text and vision models
         if self.mode == "cloud":
@@ -294,7 +299,7 @@ class OllamaBrain:
             self.text_model = LOCAL_TEXT_MODEL
             self.use_reasoning = False
             
-        print(f"[Brain Mode] Settings reloaded. Dialogue Mode: {self.mode.upper()} | Routing Mode: {self.routing_mode.upper()} | Model: {self.text_model} | Reasoning: {getattr(self, 'use_reasoning', False)}")
+        print(f"[Brain Mode] Settings reloaded. Dialogue Mode: {self.mode.upper()} | Routing Mode: {self.routing_mode.upper()} | Search Rewrite Mode: {self.search_rewrite_mode.upper()} | Model: {self.text_model} | Reasoning: {getattr(self, 'use_reasoning', False)}")
 
     def _track_call(self, label: str = ""):
         """Increment and display the daily API call counter."""
@@ -514,8 +519,14 @@ class OllamaBrain:
 
     def refine_search_query(self, query: str) -> str:
         """
-        Refines conversational raw queries into clean, highly-targeted search engine keywords using the LLM.
+        Refines conversational raw queries into clean, highly-targeted search engine keywords.
+        Supports legacy rule-based refiner, local LLM, or cloud LLM based on search_rewrite_mode.
         """
+        mode = getattr(self, 'search_rewrite_mode', 'legacy')
+        if mode == 'legacy':
+            print(f"[{get_timestamp()}] [Brain Query Rewrite] Bypassing LLM rewrite. Using legacy rule-based refiner.")
+            return legacy_refine_search_query(query)
+
         prompt = (
             "你是一個搜尋引擎關鍵字改寫專家。\n"
             "請將使用者口語化的輸入改寫成適合搜尋引擎（如 DuckDuckGo）的關鍵字（不超過 5 個詞，以空格分隔，純名詞/關鍵字，不要有問號或贅詞如「如何」、「怎樣」、「幫我」、「謝謝」、「今天」、「今年」、「的」）。\n"
@@ -536,11 +547,15 @@ class OllamaBrain:
             "輸出："
         )
         try:
-            print(f"[{get_timestamp()}] [Brain Query Rewrite] Rewriting query '{query}' using LLM (mode: {self.mode})...")
-            if self.mode == "cloud":
-                res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low")
+            print(f"[{get_timestamp()}] [Brain Query Rewrite] Rewriting query '{query}' using LLM (mode: {mode})...")
+            if mode == "local_llm":
+                res = self._local_generate(prompt, model=LOCAL_TEXT_MODEL, options={"num_predict": 30, "temperature": 0.1})
             else:
-                res = self._local_generate(prompt, options={"num_predict": 30, "temperature": 0.1})
+                # cloud_llm
+                if self.mode == "cloud":
+                    res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low")
+                else:
+                    res = self._local_generate(prompt, options={"num_predict": 30, "temperature": 0.1})
             
             # Clean up response
             res = res.strip().replace("「", "").replace("」", "").replace("\"", "").replace("'", "")
@@ -935,11 +950,11 @@ class OllamaBrain:
                     messages.append({"role": "assistant", "content": f"Context: {context_history}"})
                 
                 # Dialogue task vs. Logic/knowledge task distinction
-                if is_knowledge_query:
+                if is_knowledge_query and self.use_reasoning:
                     reasoning_effort = "high"
                     messages.append({"role": "user", "content": prompt})
                 else:
-                    reasoning_effort = "low"
+                    reasoning_effort = "low" if self.use_reasoning else None
                     short_prompt = f"{prompt}\n(極簡答：請以傲嬌貓咪口氣直接回覆，嚴禁冗長思考與推導。)"
                     messages.append({"role": "user", "content": short_prompt})
                 
