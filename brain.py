@@ -3,6 +3,7 @@ import re
 import json
 import base64
 from datetime import date, datetime
+import typing
 import prompts
 def get_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -310,7 +311,7 @@ class OllamaBrain:
         if remaining <= 0:
             print(f"  ╚═ ⛔ Daily limit reached! Switch to Local mode.")
 
-    def _cloud_chat(self, messages: list, reasoning_effort: str = None) -> str:
+    def _cloud_chat(self, messages: list, reasoning_effort: str = None, stream: bool = False) -> typing.Union[str, typing.Generator]:
         """Send a chat request to OpenRouter API and return the content string.
         Snappily falls back to local Ollama immediately if rate-limited (429), not found (404),
         or if any cloud call fails, avoiding slow retry loops."""
@@ -328,9 +329,20 @@ class OllamaBrain:
                 messages=messages,
                 temperature=0.3,
                 timeout=12.0 if reasoning_effort == "high" else 6.0,  # Strict timeout
-                extra_body=extra_body
+                extra_body=extra_body,
+                stream=stream
             )
-            return response.choices[0].message.content.strip()
+            if stream:
+                def cloud_stream_generator():
+                    try:
+                        for chunk in response:
+                            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                                yield chunk.choices[0].delta.content
+                    except Exception as e:
+                        print(f"Cloud stream error: {e}")
+                return cloud_stream_generator()
+            else:
+                return response.choices[0].message.content.strip()
         except Exception as e:
             err_str = str(e)
             print(f"⚠️ [OpenRouter API] Model {primary_model} failed: {err_str}")
@@ -355,9 +367,20 @@ class OllamaBrain:
                         messages=user_parts,
                         temperature=0.3,
                         timeout=12.0 if reasoning_effort == "high" else 6.0,
-                        extra_body=extra_body
+                        extra_body=extra_body,
+                        stream=stream
                     )
-                    return response.choices[0].message.content.strip()
+                    if stream:
+                        def fallback_cloud_stream_generator():
+                            try:
+                                for chunk in response:
+                                    if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
+                                        yield chunk.choices[0].delta.content
+                            except Exception as e:
+                                print(f"Cloud stream error (merged-role): {e}")
+                        return fallback_cloud_stream_generator()
+                    else:
+                        return response.choices[0].message.content.strip()
                 except Exception as inner_e:
                     print(f"⚠️ [OpenRouter API] Merged-role request for {primary_model} also failed: {inner_e}")
                     last_error = inner_e
@@ -369,12 +392,12 @@ class OllamaBrain:
             user_prompt = next((m["content"] for m in messages if m["role"] == "user"), "")
             
             merged_prompt = f"{system_prompt}\n\nUser Input: {user_prompt}" if system_prompt else user_prompt
-            return self._local_generate(merged_prompt, model=LOCAL_TEXT_MODEL)
+            return self._local_generate(merged_prompt, model=LOCAL_TEXT_MODEL, stream=stream)
         except Exception as local_err:
             print(f"🚨 [Ollama] Local fallback also failed: {local_err}")
             raise last_error if last_error else local_err
 
-    def _local_generate(self, prompt: str, model: str = None, options: dict = None, **kwargs) -> str:
+    def _local_generate(self, prompt: str, model: str = None, options: dict = None, stream: bool = False, **kwargs) -> typing.Union[str, typing.Generator]:
         """Send a generate request to local Ollama using chat API with minimal parameters."""
         target_model = model if model else self.text_model
         if target_model == CLOUD_TEXT_MODEL:
@@ -392,9 +415,20 @@ class OllamaBrain:
         response = ollama.chat(
             model=target_model,
             messages=[{'role': 'user', 'content': prompt}],
-            options=opts
+            options=opts,
+            stream=stream
         )
-        return response['message']['content'].strip()
+        if stream:
+            def local_stream_generator():
+                try:
+                    for chunk in response:
+                        if 'message' in chunk and 'content' in chunk['message']:
+                            yield chunk['message']['content']
+                except Exception as e:
+                    print(f"Local stream error: {e}")
+            return local_stream_generator()
+        else:
+            return response['message']['content'].strip()
 
 
     def warmup(self):
@@ -525,7 +559,7 @@ class OllamaBrain:
             print(f"[{get_timestamp()}] [Brain Query Rewrite] LLM rewrite failed: {e}. Falling back to legacy refiner.")
             return legacy_refine_search_query(query)
 
-    def search_web(self, query: str) -> str:
+    def search_web(self, query: str, stream: bool = False) -> typing.Union[str, typing.Generator]:
         """Searches the web using DuckDuckGo and summarises the results with a strict content safety filter."""
         print(f"Searching web for: {query}")
         
@@ -633,10 +667,17 @@ class OllamaBrain:
             )
             prompt = prompts.get_search_web_prompt(query, lang_rule, search_context)
             if self.mode == "cloud":
-                res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high")
+                res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high", stream=stream)
             else:
-                res = self._local_generate(prompt)
-            return clean_traditional_chinese(res)
+                res = self._local_generate(prompt, stream=stream)
+            
+            if stream:
+                def clean_stream():
+                    for chunk in res:
+                        yield clean_traditional_chinese(chunk)
+                return clean_stream()
+            else:
+                return clean_traditional_chinese(res)
         except Exception as e:
             print(f"Web search error: {e}")
             return "There was an error trying to search the web."
@@ -808,7 +849,7 @@ class OllamaBrain:
     # ─────────────────────────────────────────────
     # Main Chat Response
     # ─────────────────────────────────────────────
-    def generate_response(self, prompt, context_history=None):
+    def generate_response(self, prompt, context_history=None, stream: bool = False) -> typing.Union[str, typing.Generator]:
         """
         Generates a conversational response.
         Language is detected programmatically; the model only needs to obey one explicit rule.
@@ -902,7 +943,7 @@ class OllamaBrain:
                     short_prompt = f"{prompt}\n(極簡答：請以傲嬌貓咪口氣直接回覆，嚴禁冗長思考與推導。)"
                     messages.append({"role": "user", "content": short_prompt})
                 
-                res = self._cloud_chat(messages, reasoning_effort=reasoning_effort)
+                res = self._cloud_chat(messages, reasoning_effort=reasoning_effort, stream=stream)
             else:
                 full_prompt = f"{system_content}\n\nUser: {prompt}"
                 if context_history:
@@ -912,18 +953,25 @@ class OllamaBrain:
                 limit_predict = 180 if is_knowledge_query else 60
                 res = self._local_generate(
                     full_prompt,
-                    options={"temperature": 0.4, "repeat_penalty": 1.05, "num_predict": limit_predict}
+                    options={"temperature": 0.4, "repeat_penalty": 1.05, "num_predict": limit_predict},
+                    stream=stream
                 )
             
-            final_res = clean_traditional_chinese(res)
-            # 動態快取 Mimo 的回覆專有名詞，做為下一次 ASR 的上下文提示
-            try:
-                from memory import MimoMemory
-                memory = MimoMemory()
-                memory.save_context_keywords(final_res)
-            except Exception as ex:
-                print(f"Error saving Mimo response to STT cache: {ex}")
-            return filter_degenerative_repetition(final_res)
+            if stream:
+                def stream_cleaner():
+                    for chunk in res:
+                        yield clean_traditional_chinese(chunk)
+                return stream_cleaner()
+            else:
+                final_res = clean_traditional_chinese(res)
+                # 動態快取 Mimo 的回覆專有名詞，做為下一次 ASR 的上下文提示
+                try:
+                    from memory import MimoMemory
+                    memory = MimoMemory()
+                    memory.save_context_keywords(final_res)
+                except Exception as ex:
+                    print(f"Error saving Mimo response to STT cache: {ex}")
+                return filter_degenerative_repetition(final_res)
         except Exception as e:
             print(f"Error generating response: {e}")
             return "I'm having trouble thinking right now."

@@ -167,6 +167,85 @@ def play_voice_stream(tts, response, tts_queue, stop_audio_flag):
                 break
             time.sleep(0.05)
 
+import queue as py_queue
+def stream_llm_and_play(llm_generator, tts, tts_queue, stop_audio_flag, transcript_queue, transcription):
+    stop_audio_flag.clear()
+    tts_queue.put(b'\x02')  # stop audio on frontend
+    time.sleep(0.15)
+    
+    sentence_queue = py_queue.Queue()
+    full_text_container = [""]
+    
+    def llm_worker():
+        sentence_buffer = ""
+        try:
+            for chunk in llm_generator:
+                if stop_audio_flag.is_set():
+                    break
+                if chunk:
+                    full_text_container[0] += chunk
+                    sentence_buffer += chunk
+                    transcript_queue.put((transcription, full_text_container[0] + " ..."))
+                    
+                    import re
+                    match = re.search(r'([。！？…；.!?\n]+)', sentence_buffer)
+                    if match:
+                        end_idx = match.end()
+                        sentence = sentence_buffer[:end_idx].strip()
+                        sentence_buffer = sentence_buffer[end_idx:]
+                        if sentence:
+                            sentence_queue.put(sentence)
+        except Exception as e:
+            print(f"LLM Stream Worker Error: {e}")
+            
+        if sentence_buffer.strip():
+            sentence_queue.put(sentence_buffer.strip())
+        sentence_queue.put(None)
+        transcript_queue.put((transcription, full_text_container[0]))
+
+    worker_thread = threading.Thread(target=llm_worker)
+    worker_thread.start()
+    
+    first_chunk_sent_at = None
+    total_bytes = 0
+    
+    while True:
+        try:
+            sentence = sentence_queue.get(timeout=0.1)
+            if sentence is None:
+                break
+            
+            print(f"[{get_timestamp()}] [Streaming TTS] Synthesizing: '{sentence}'")
+            for audio_chunk in tts.synthesize_stream(sentence):
+                if stop_audio_flag.is_set():
+                    break
+                tts_queue.put(audio_chunk)
+                total_bytes += len(audio_chunk)
+                if first_chunk_sent_at is None:
+                    first_chunk_sent_at = time.time()
+                    
+            if stop_audio_flag.is_set():
+                break
+        except py_queue.Empty:
+            if stop_audio_flag.is_set():
+                break
+            continue
+
+    worker_thread.join()
+    
+    if not stop_audio_flag.is_set() and first_chunk_sent_at is not None:
+        audio_duration = total_bytes / (22050 * 2)
+        elapsed_since_first = time.time() - first_chunk_sent_at
+        remaining_playback = audio_duration - elapsed_since_first + 0.5
+        if remaining_playback > 0:
+            deadline = time.time() + remaining_playback
+            while time.time() < deadline:
+                if stop_audio_flag.is_set():
+                    break
+                time.sleep(0.05)
+                
+    return full_text_container[0]
+
 def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, transcript_queue, stop_audio_flag, command_queue):
     # Initialize and start OLED first so it shows loading status on SSD1306
     oled_ctrl = OLEDController(sm)
@@ -596,7 +675,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                             if intent_hint:
                                 augmented_prompt += f"\n{intent_hint}"
                                 
-                            response = brain.generate_response(augmented_prompt, context)
+                            response = brain.generate_response(augmented_prompt, context, stream=True)
                         elif action == "emergency":
                             import settings_manager
                             patient_name = settings_manager.load_settings().get("patient_name", "主人")
@@ -618,7 +697,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                             else:
                                 response = "對不起，本喵現在沒有接上眼睛（攝影機），看不到喵。"
                         elif action == "search_web":
-                            response = brain.search_web(transcription)
+                            response = brain.search_web(transcription, stream=True)
                         elif action == "swap_model":
                             new_mode = "cloud" if brain.mode == "local" else "local"
                             brain.set_mode(new_mode)
@@ -682,10 +761,6 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         else:
                             response = "我不太確定該怎麼做，您可以再說一次嗎？"
 
-                        if response and response != "...":
-                            memory.add_interaction(transcription, response)
-
-                        print(f"[{get_timestamp()}] 💬 Mimo says  : {response}")
                         print(f"[{get_timestamp()}] ── TTS START ─────────────────────────")
 
                         # ── Dispatch to UI: Send Speaking state FIRST so frontend sets mimoSpeakTimeStr,
@@ -694,9 +769,19 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         state_queue.put(SparkState.SPEAKING)
                         print(f"[{get_timestamp()}] 🔊 Speaking ({brain.mode.upper()} | {brain.text_model})")
 
-                        # Send transcript to UI (AFTER Speaking state — frontend needs mimoSpeakTimeStr set first)
-                        transcript_queue.put((transcription, response))
-                        play_voice_stream(tts, response, tts_queue, stop_audio_flag)
+                        import types
+                        if isinstance(response, types.GeneratorType):
+                            final_response_text = stream_llm_and_play(response, tts, tts_queue, stop_audio_flag, transcript_queue, transcription)
+                        else:
+                            # Send transcript to UI (AFTER Speaking state — frontend needs mimoSpeakTimeStr set first)
+                            transcript_queue.put((transcription, response))
+                            play_voice_stream(tts, response, tts_queue, stop_audio_flag)
+                            final_response_text = response
+
+                        if final_response_text and final_response_text != "...":
+                            memory.add_interaction(transcription, final_response_text)
+
+                        print(f"[{get_timestamp()}] 💬 Mimo says  : {final_response_text}")
                         print(f"[{get_timestamp()}] ✅ TTS Done   : playback finished")
 
                     # Flush stale audio
