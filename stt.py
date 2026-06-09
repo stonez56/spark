@@ -41,7 +41,7 @@ class SparkSTT:
                             parts = re.split(r'[^\w\u4e00-\u9fff]+', text)
                             for p in parts:
                                 p = p.strip()
-                                if 2 <= len(p) <= 8 and p not in stop_words and re.match(r'^[\u4e00-\u9fff]+$', p):
+                                if 2 <= len(p) <= 4 and p not in stop_words and re.match(r'^[\u4e00-\u9fff]+$', p):
                                     extra_keywords.append(p)
 
             # Fetch dynamically cached context keywords from SQLite
