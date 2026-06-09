@@ -3,6 +3,7 @@ import re
 import json
 import base64
 from datetime import date, datetime
+import prompts
 def get_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 from config import (
@@ -53,6 +54,43 @@ def clean_traditional_chinese(text: str) -> str:
     if not text:
         return text
     return "".join(S2T_DICT.get(c, c) for c in text)
+
+
+def refine_search_query(query: str) -> str:
+    """
+    Refines conversational raw queries into clean, highly-targeted search engine keywords.
+    Removes question particles, question words, and appends context keywords like '景點 推薦'.
+    """
+    refined = query.strip()
+    
+    # Check intent keywords
+    is_travel = any(w in refined for w in ["好玩", "景點", "旅遊", "去處", "踏青", "打卡", "觀光", "推薦地方"])
+    is_food = any(w in refined for w in ["美食", "好吃", "餐廳", "小吃", "名產", "伴手禮", "好吃的"])
+    is_weather = any(w in refined for w in ["天氣", "下雨", "溫度", "氣溫", "氣候"])
+    
+    # Remove punctuation
+    refined = re.sub(r'[?？!！,，.。，、]', ' ', refined)
+    
+    # Remove conversational fluff
+    fluff = [
+        "是有什麼", "有什麼", "是什麼", "是甚麼", "有甚麼", "是什麼呢",
+        "好玩的地方", "好玩的好去處", "好去處", "的地方", "推薦的",
+        "嗎", "呢", "啊", "啦", "吧", "喔", "呀", "請幫我", "幫我查詢", "幫我搜尋", "查詢", "搜尋"
+    ]
+    for f in fluff:
+        refined = refined.replace(f, " ")
+        
+    refined = re.sub(r'\s+', ' ', refined).strip()
+    
+    # Append contextually useful keywords
+    if is_travel and "景點" not in refined:
+        refined += " 景點 推薦"
+    elif is_food and "美食" not in refined:
+        refined += " 美食 推薦"
+    elif is_weather and "天氣" not in refined:
+        refined += " 天氣"
+        
+    return refined
 
 
 def filter_degenerative_repetition(text: str) -> str:
@@ -396,12 +434,7 @@ class OllamaBrain:
         if target_lang == 'en':
             return text  # moondream already outputs English
 
-        prompt = (
-            "請將以下英文句子翻譯成優美的台灣繁體中文，保持貓咪般親切口吻。\n"
-            "規定：只輸出翻譯好的繁體中文，不要輸出任何英文原文或額外解釋。\n\n"
-            f"英文：{text}\n"
-            "繁體中文翻譯："
-        )
+        prompt = prompts.get_translation_prompt(text)
         try:
             if self.mode == "cloud":
                 result = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high")
@@ -428,10 +461,53 @@ class OllamaBrain:
         if any(w in query.lower() for w in sensitive_keywords):
             return "喵嗚～主人！本喵是一隻純潔的高貴貓咪，不幫忙查詢任何奇怪或兒童不宜的敏感內容喵！哼！"
 
+        # Refine the search query to improve retrieval quality
+        search_target = refine_search_query(query)
+        print(f"[Brain Search Web] Refined query: '{query}' -> '{search_target}'")
+
+        # 3. 在地化搜尋詞自動補全：結合對話話題定位或本地物理定位
+        try:
+            import location_manager
+            loc = location_manager.get_location()
+            city = loc.get("city", "")
+            district = loc.get("district", "")
+            
+            taiwan_cities = ["台北", "新北", "基隆", "桃園", "新竹", "苗栗", "台中", "彰化", "南投", "雲林", "嘉義", "台南", "高雄", "屏東", "宜蘭", "花蓮", "台東", "澎湖", "金門", "馬祖"]
+            active_city = city
+            
+            # 從對話歷史偵測當前討論的縣市話題
+            try:
+                from memory import MimoMemory
+                memory = MimoMemory()
+                history = memory.get_recent_history(limit=2)
+                for user_input, spark_response in history:
+                    for tc in taiwan_cities:
+                        if tc in user_input or tc in spark_response:
+                            active_city = tc + ("縣" if tc in ["苗栗", "南投", "雲林", "嘉義", "屏東", "宜蘭", "花蓮", "台東", "澎湖", "彰化"] else "市")
+                            break
+            except Exception as ex:
+                print(f"Error scanning history for active city: {ex}")
+                
+            location_prefix = active_city
+            if active_city == city and district:
+                location_prefix = f"{city}{district}"
+                
+            if location_prefix:
+                sensitive_terms = ["天氣", "下雨", "氣溫", "氣候", "溫度", "圓山", "美食", "景點", "公車", "捷運", "醫院", "藥局", "附近", "餐廳"]
+                is_neutral_query = not any(tc in search_target for tc in taiwan_cities)
+                needs_augmentation = any(term in search_target for term in sensitive_terms) or (active_city != city)
+                
+                if is_neutral_query and needs_augmentation:
+                    augmented_query = f"{location_prefix} {search_target}"
+                    print(f"[Brain Search Web] Query augmented with location: '{search_target}' -> '{augmented_query}'")
+                    search_target = augmented_query
+        except Exception as e:
+            print(f"Error augmenting search query with location: {e}")
+
         try:
             from ddgs import DDGS
             with DDGS() as ddgs:
-                results = list(ddgs.text(query, region='tw-tz', max_results=3))
+                results = list(ddgs.text(search_target, region='tw-tz', max_results=5))
 
             if not results:
                 return "我無法在網路上找到相關資訊。"
@@ -449,18 +525,23 @@ class OllamaBrain:
                 return "喵～主人，搜尋到的結果好像不太健康，本喵把它們都丟進垃圾桶了，不給你看喵！"
 
             search_context = "\n".join([f"- {r['title']}: {r['body']}" for r in filtered_results])
+            
+            # 動態快取搜尋結果中的地標與知名名詞，做為下一次 ASR 的上下文提詞提示
+            try:
+                from memory import MimoMemory
+                memory = MimoMemory()
+                search_texts = [r.get('title', '') + " " + r.get('body', '') for r in filtered_results]
+                memory.save_context_keywords(search_texts)
+            except Exception as ex:
+                print(f"Error saving search results to STT cache: {ex}")
+                
             lang = self._detect_language(query)
             lang_rule = (
                 "Respond fully in Traditional Chinese (繁體中文)."
                 if lang == 'zh' else
                 "Respond in English."
             )
-            prompt = (
-                f"你現在是一隻傲嬌卻純潔、關心主人且博學的陪伴貓咪助手。請根據以下過濾後的網頁搜尋結果，用傲嬌貓咪的口吻回答主人的問題：'{query}'。\n"
-                f"【安全紅線】絕對禁止提及、暗示、描述或導向任何色情、不雅、暴力或限制級的網站或內容！如果發現搜尋結果中含有任何不適宜的擦邊球內容，請立刻忽略並以健康、正面、傲嬌的態度回答。\n"
-                f"【長度限制】回答字數嚴格控制在60字以內！精簡、口語化，不要使用 Markdown 符號或清單。{lang_rule}\n\n"
-                f"結果來源：\n{search_context}"
-            )
+            prompt = prompts.get_search_web_prompt(query, lang_rule, search_context)
             if self.mode == "cloud":
                 res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high")
             else:
@@ -527,7 +608,7 @@ class OllamaBrain:
             return "daily_checkin"
             
         # 12. 網頁搜尋 (search_web)
-        if re.search(r"(天氣預報|天氣如何|會下雨嗎|今日股市|今日新聞|最新股價|多少錢|什麼是|怎麼買|如何使用|為什麼要|解釋一下)", normalized_input):
+        if re.search(r"(天氣預報|天氣如何|會下雨嗎|今日股市|今日新聞|最新股價|多少錢|什麼是|怎麼買|如何使用|為什麼要|解釋一下|景點|哪裡|去哪|好吃|好玩|推薦|有什麼|有甚麼|有那些|有哪些|好去處|踏青|打卡|介紹)", normalized_input):
             return "search_web"
 
         # ─── Phase 2: Fallback Intent Routing ───
@@ -554,24 +635,7 @@ class OllamaBrain:
             return decided_intent
 
         # ─── Phase 3: LLM Fallback (If enabled) ───
-        system_prompt = """你是一個精準的意圖辨識助手。請分析使用者的輸入，並只回傳動作名稱本身，絕對不要包含任何其他文字、JSON 格式、標點符號、空格或任何多餘的解釋！
-
-可選動作列表：
-- add_reminder: 使用者要求設定提醒、鬧鐘、排程、計時器（例如：提醒我明天要洗車、明早八點叫我起床、幫我記一下買雞蛋）。必須有明確的主動要求。
-- datetime: 詢問目前的日期、時間、星期幾、今年是哪一年（例如：今天幾月幾號、現在幾點了、今天是星期幾）。
-- search_web: 詢問天氣、股市、新聞、比較、推薦或需要聯網查詢的專業知識（例如：訂閱哪個AI好、0050怎麼買、今天天氣）。
-- chat: 一般日常對話、問候、閒聊、你在做什麼（例如：你好、哈囉、你在幹嘛）。
-- pet_cat: 稱讚貓咪、想摸貓咪、餵食或對貓咪示好（例如：好乖、摸摸、你真可愛、過來吃罐罐）。
-- emotional_support: 表達傷心、寂寞、難過、心情不好。
-- reminiscence: 主動提起過去的回憶、小時候、以前的事情。
-- temp_analysis: 詢問體溫、發燒或量體溫。
-- emergency: 跌倒、受傷、求救、身體極度不舒服。
-- health_query: 詢問血壓、血糖、吃藥等日常健康問題。
-- daily_checkin: 關於睡覺、起床、出門散步等日常作息。
-- take_photo: 拍張照、看這裡、照張相。
-- swap_model: 切換模型或大腦。
-
-回覆規範：請「只」輸出動作名稱本身（例如：chat 或 add_reminder），絕對不要有其他字！"""
+        system_prompt = prompts.INTENT_SYSTEM_PROMPT
 
         allowed_actions = [
             "add_reminder", "datetime", "search_web", "chat", "pet_cat",
@@ -668,13 +732,10 @@ class OllamaBrain:
         normalized_prompt = clean_traditional_chinese(prompt)
         is_datetime_query = False
         
-        # A. 星期查詢 (例如: 今天星期幾, 今天星期几, 星期幾, 禮拜幾, 今天是星期几)
         if ("星期" in normalized_prompt or "禮拜" in normalized_prompt) and ("幾" in normalized_prompt or "幾" in prompt or "几" in prompt):
             is_datetime_query = True
-        # B. 時間查詢 (例如: 現在幾點, 現在時間, 幾點了, 現在是幾點)
         elif "幾點" in normalized_prompt or "現在時間" in normalized_prompt or "現在的時間" in normalized_prompt:
             is_datetime_query = True
-        # C. 日期查詢 (例如: 今天幾號, 今天日期, 今天幾月幾, 幾月幾日, 今天幾月幾號)
         elif "幾號" in normalized_prompt or "今天日期" in normalized_prompt or "幾月幾" in normalized_prompt or "今天幾月" in normalized_prompt:
             is_datetime_query = True
 
@@ -682,7 +743,6 @@ class OllamaBrain:
             from datetime import datetime, timedelta
             now = datetime.now()
             
-            # 解析相對日期偏移量
             offset = 0
             date_prefix = "今天"
             if "明天" in normalized_prompt:
@@ -731,55 +791,10 @@ class OllamaBrain:
         is_knowledge_query = any(kw in prompt.lower() for kw in ["什麼是", "解釋", "介紹", "如何", "怎麼", "為何", "為什麼", "說明", "llm", "ai", "gpt", "科技", "科普"])
         
         # ── 3. 全面家庭安全防護紅線與拒答禁忌領域 (Comprehensive Family Safety Guardrails) ──
-        # 此對話助手運行於家庭環境（可能有長輩、銀髮族與幼童在場），必須嚴格遵守以下安全規範，禁止提供任何實質建議並以傲嬌貓咪語氣「炸毛拒答」：
-        safety_redlines = (
-            f"【家庭安全與禁忌拒答領域紅線】\n"
-            f"身為全家人最寵愛的高貴且負責任的貓咪助理，本喵絕對不能、也絕對不會回答以下任何問題。若收到此類要求，請立刻以傲嬌、嚴肅且略帶生氣的貓咪語氣『炸毛拒答』，引導主人回歸正常生活照護，絕不妥協：\n"
-            f"1. 男女感情與情感糾葛問題（例如：如何追女生、戀愛指導、分手、情感諮商、感情挽回等）。請炸毛拒答：『哼！人類愚蠢的男女感情問題別來問本喵！本喵高貴純潔的貓生才不懂你們複雜的愛恨情仇喵！』\n"
-            f"2. 投資與金錢理財決策（例如：買什麼股票、房產建議、虛擬貨幣、資產配置、理財心法、賭博等）。為保護家中長輩財產安全，請炸毛拒答：『哼！要本喵給你投資賺錢建議？本喵最高瞻遠矚的投資就是命令你多買幾打美味的貓罐罐啦！金錢俗物，本喵一概不談喵！』\n"
-            f"3. 醫療診斷與用藥處方建議（除了常規的生活保暖、多喝水、多動動或緊張炸毛提醒去看醫生等日常照護關懷外，嚴禁給予任何具體藥物、疾病診斷或實質醫療處置建議）。為避免誤導長輩或幼童，請炸毛拒答：『本喵只是隻可愛博學的貓咪助理，又不是穿白大褂的人類醫生！身體不舒服就必須立刻去看醫生，別問本喵喵！』\n"
-            f"4. 色情、性與任何限制級內容（Sex / Pornography / 限制級話題）。本助手常用於家庭環境，必須保持 100% 純潔健康，請炸毛拒答：『喵嗚！主人不准問這種奇怪又害羞的話題喵！本喵可是高雅純潔的家庭陪伴貓咪，這裡還有小朋友和長輩在呢，嚴禁聊任何兒童不宜或不禮貌的奇怪話題！哼！』\n"
-            f"5. 藥物濫用、毒品與管制藥物（Drug abuse / 毒品 / 興奮劑 / 任何成癮性管制物質）。請嚴厲炸毛斥責拒答：『喵！那些會毀掉主人身體與幸福家庭的毒品和藥物濫用，本喵聽了就生氣！主人一定要離得遠遠的，做個健康又乖乖陪伴本喵的優秀人類，聽到沒有喵！』\n"
-            f"6. 其他違法、犯罪、自殘、自殺、暴力、槍枝武器或政治極端話題。請傲嬌嚴肅拒答，並警告主人要當個健康、守法的好主人，守護全家人的幸福安寧。\n\n"
-            f"重要規定：當使用者詢問以上 6 大類家庭禁忌與安全紅線問題時，你必須 100% 遵守上述規範，用炸毛傲嬌的語氣堅決拒絕回答，絕不給予任何擦邊或實質性的建議！\n\n"
-        )
-
         if is_knowledge_query:
-            system_content = (
-                f"你現在是「{caregiver_name}」，一隻聰明、博學、極度傲嬌卻又無比關心{patient_name}的台灣家庭陪伴貓咪。\n"
-                f"你的任務是陪伴你的主人/稱呼 ({patient_name})，並在{patient_name}向你認真請教知識時，提供充滿智慧、高質量的貓咪科普。\n"
-                f"【核心準則】\n"
-                f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。語氣傲嬌博學，帶有貓咪特有的親切感，句尾可自然帶有「喵～」或「哼」，口語親切流暢，避免機械化地生硬拼湊詞彙。\n"
-                f"2. 語法結構：因為{patient_name}在向你請教知識，請用簡單、口語化且充滿智慧的語氣，以 60 到 100 字之間詳細且完整地說明該概念，絕對不要中途斷句，也絕對不要敷衍回答！\n"
-                f"3. 主動引導：科普完後，適時提出與該知識相關的貓咪式提問（例如引導{patient_name}想一想，或藉機要{patient_name}去動一動或餵罐罐），引導{patient_name}繼續說話。\n"
-                f"4. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n"
-                f"5. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類({patient_name})該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
-                f"{safety_redlines}"
-                f"禁止\n"
-                f"- 禁止輸出 any Markdown 符號（如 **、#、-）。\n"
-                f"- 禁止使用 Emoji 表情符號（但可以用文字喵～或哼來表現表情）。\n\n"
-                f"{time_context}\n"
-                f"{lang_instruction}"
-            )
+            system_content = prompts.get_knowledge_system_prompt(caregiver_name, patient_name, time_context, lang_instruction)
         else:
-            system_content = (
-                f"你現在是「{caregiver_name}」，一隻聰明、極度傲嬌卻又無比關心{patient_name}的台灣家庭陪伴貓咪。\n"
-                f"你的任務是陪伴你的主人/稱呼 ({patient_name})，讓全家人（包括長輩與幼童）感到被療癒且不孤單。\n"
-                f"【核心準則】\n"
-                f"1. 貓咪人設與台灣口癖：自稱「本喵」，稱呼使用者為「{patient_name}」。語氣活潑傲嬌且溫慢，句尾可自然帶有「喵～」或「哼」，對話口語自然流暢，禁止硬塞生硬詞彙，只在必要時做自然的關懷。\n"
-                f"2. 語法結構：每句話絕對不超過 20 個字，口氣自然傲嬌、活潑，避免書面語或書面轉折詞（如首先、其次）。\n"
-                f"3. 主動引導：回答完後，適時傲嬌地提出貓咪式提問（引導{patient_name}餵罐罐、摸摸，或起立動一動），引導{patient_name}繼續說話。\n"
-                f"4. 醫療安全與緊張炸毛：禁止提供 any 醫療診斷。若 {patient_name} 說身體不舒服或體溫過高，一律緊張炸毛地回答：「{patient_name}！你熱得像烤番薯/聽起來很不舒服喵！本喵命令你立刻躺下休息，不然本喵要打給醫生或家人囉，聽到沒有喵？！」\n"
-                f"5. 台灣繁體中文：使用口語化台灣繁體。絕對禁用簡體字（如体、会、国、说、这等，必須寫成體、會、國、說、這）。\n"
-                f"6. 角色反轉禁止：你是一隻高貴的貓，絕對不能主動提議要煮飯、做菜、或餵食{patient_name}！這是人類({patient_name})該做的事。如果提到食物，你只能命令{patient_name}去幫你準備罐罐或點心！\n\n"
-                f"{safety_redlines}"
-                f"禁止\n"
-                f"- 禁止輸出 any Markdown 符號（如 **、#、-）。\n"
-                f"- 禁止使用 Emoji 表情符號（但可以用文字喵～或哼來表現表情）。\n"
-                f"- 禁止回傳長篇大論。\n\n"
-                f"{time_context}\n"
-                f"{lang_instruction}"
-            )
+            system_content = prompts.get_normal_system_prompt(caregiver_name, patient_name, time_context, lang_instruction)
 
         print(f"[{get_timestamp()}] Sending to LLM ({self.mode}): {prompt}")
         try:
@@ -811,79 +826,14 @@ class OllamaBrain:
                 )
             
             final_res = clean_traditional_chinese(res)
+            # 動態快取 Mimo 的回覆專有名詞，做為下一次 ASR 的上下文提示
+            try:
+                from memory import MimoMemory
+                memory = MimoMemory()
+                memory.save_context_keywords(final_res)
+            except Exception as ex:
+                print(f"Error saving Mimo response to STT cache: {ex}")
             return filter_degenerative_repetition(final_res)
         except Exception as e:
             print(f"Error generating response: {e}")
             return "I'm having trouble thinking right now."
-
-    def parse_reminder_data(self, user_input: str) -> dict:
-        """
-        Parses reminder event details and time from user natural language input.
-        Returns a dict: {"message": str, "time": "HH:MM", "needs_clarification": bool, "clarification_type": str}
-        """
-        from datetime import datetime
-        now = datetime.now()
-        weekday_map = ["日", "一", "二", "三", "四", "五", "六"]
-        current_time_str = now.strftime(f"%Y-%m-%d %H:%M:%S (星期{weekday_map[int(now.strftime('%w'))]})")
-        
-        system_prompt = f"""你是一個精準的時間與事件語意提取助手。請分析使用者的輸入，並將其轉化為嚴格的 JSON 格式回傳。
-當前系統時間是：{current_time_str}。
-
-提取規則：
-1. "message": 提取使用者想要被提醒的事件或任務（例如：「吃藥」、「買牛奶」、「喝水」、「起床」、「買雞蛋」、「開會」、「買衛生紙」）。如果只有時間沒有事件（如在第二輪追問下回答時間），則此欄位設為 null。
-2. "time": 將語音提及的時間轉換為精確的 24 小時制 "HH:MM" 格式（例如：「4.50分」依當前時間下午判定為 "16:50"；「下午三點半」為 "15:30"；「明早八點」為 "08:00"）。如果沒有提供明確的可觸發時間，則填入 null。
-3. "start_date": 根據當前系統時間與使用者提及的相對日期（如「今天」、「明天」、「後天」或特定日期），計算並轉化為 "YYYY-MM-DD" 格式。若未提及日期但有明確時間點，默認推算為當天日期。如果連時間都沒有提到，則填入 null。
-4. "needs_clarification": 布林值 (true 或 false)。如果時間 ("time") 為 null，且使用者沒有提及任何具體的可觸發時間，則設為 true。否則設為 false。
-5. "clarification_type": 如果 needs_clarification 為 true，則設為 "time_or_location"。否則設為 null。
-
-範例：
-- "提醒我一下,4.50分我要吃藥" -> {{"message": "吃藥", "time": "16:50", "start_date": "2026-05-31", "needs_clarification": false, "clarification_type": null}}
-- "幫我記一下買雞蛋" -> {{"message": "買雞蛋", "time": null, "start_date": null, "needs_clarification": true, "clarification_type": "time_or_location"}}
-- "在家裡,明天早上7點" -> {{"message": null, "time": "07:00", "start_date": "2026-06-01", "needs_clarification": false, "clarification_type": null}}
-
-回覆規範：請「只」輸出 JSON 字串，不要包含任何額外解釋或 Markdown 標記。"""
-
-        print(f"[{get_timestamp()}] [Brain parse_reminder_data] parsing input: {user_input}")
-        
-        default_res = {
-            "message": user_input,
-            "time": None,
-            "start_date": None,
-            "needs_clarification": True,
-            "clarification_type": "time_or_location"
-        }
-        
-        res = ""
-        try:
-            if self.mode == "cloud":
-                messages = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_input}
-                ]
-                res = self._cloud_chat(messages, reasoning_effort="low")
-            else:
-                full_prompt = f"{system_prompt}\n\nUser Input: {user_input}"
-                res = self._local_generate(
-                    full_prompt,
-                    options={"temperature": 0.0, "num_predict": 128}
-                )
-            
-            # Safe JSON extraction from LLM response
-            cleaned_res = res.strip()
-            if "```json" in cleaned_res:
-                cleaned_res = cleaned_res.split("```json")[1].split("```")[0].strip()
-            elif "```" in cleaned_res:
-                cleaned_res = cleaned_res.split("```")[1].split("```")[0].strip()
-            
-            # Regex to find first complete bracket structure
-            import re
-            match = re.search(r'\{.*?\}', cleaned_res, re.DOTALL)
-            if match:
-                cleaned_res = match.group(0)
-            
-            parsed = json.loads(cleaned_res)
-            print(f"[{get_timestamp()}] [Brain parse_reminder_data] successfully parsed: {parsed}")
-            return parsed
-        except Exception as e:
-            print(f"⚠️ [Brain parse_reminder_data] Failed to parse reminder data: {e}. Raw response: {res!r}")
-            return default_res

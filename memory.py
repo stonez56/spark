@@ -16,6 +16,12 @@ class MimoMemory:
                 spark_response TEXT
             )
         ''')
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS stt_context_keywords (
+                keyword TEXT PRIMARY KEY,
+                timestamp TEXT
+            )
+        ''')
         self.conn.commit()
 
         # ChromaDB setup for semantic retrieval
@@ -78,9 +84,83 @@ class MimoMemory:
             if not results['documents'] or not results['documents'][0]:
                 return ""
                 
-            # Combine the retrieved documents into a single context string
             context = "\n".join(results['documents'][0])
             return context
         except Exception as e:
             print(f"Error retrieving memory context: {e}")
             return ""
+
+    def get_recent_history(self, limit=2):
+        """Retrieve recent conversation history (user_input, spark_response) from SQLite."""
+        try:
+            self.cursor.execute(
+                "SELECT user_input, spark_response FROM conversation_history ORDER BY timestamp DESC LIMIT ?",
+                (limit,)
+            )
+            return self.cursor.fetchall()
+        except Exception as e:
+            print(f"Error retrieving recent history: {e}")
+            return []
+
+    def save_context_keywords(self, text_list_or_str):
+        """Extract valid keywords from text list or string and save them to SQLite context table."""
+        if not text_list_or_str:
+            return
+        
+        if isinstance(text_list_or_str, str):
+            texts = [text_list_or_str]
+        else:
+            texts = text_list_or_str
+            
+        import re
+        stop_words = {
+            "這個", "那個", "什麼", "什麼是", "怎麼", "如何", "為何", "為什麼", "這樣", "那樣",
+            "本喵", "主人", "奴才", "你們", "我們", "他們", "自己", "一個", "一些", "一下", "一次",
+            "可以", "幫我", "需要", "不要", "不用", "可以嗎", "好嗎", "好的", "哼", "喵", "喵～",
+            "的", "了", "在", "是", "我", "你", "他", "她", "它", "們", "這", "那", "都", "不", "也"
+        }
+        
+        timestamp = datetime.now().isoformat()
+        extracted = []
+        for text in texts:
+            if not text:
+                continue
+            parts = re.split(r'[^\w\u4e00-\u9fff]+', text)
+            for p in parts:
+                p = p.strip()
+                if not p:
+                    continue
+                if re.match(r'^[\u4e00-\u9fff]+$', p):
+                    if 2 <= len(p) <= 8 and p not in stop_words:
+                        extracted.append(p)
+                        
+        if not extracted:
+            return
+            
+        try:
+            for kw in extracted:
+                self.cursor.execute(
+                    "INSERT OR REPLACE INTO stt_context_keywords (keyword, timestamp) VALUES (?, ?)",
+                    (kw, timestamp)
+                )
+            self.conn.commit()
+            
+            self.cursor.execute(
+                "DELETE FROM stt_context_keywords WHERE keyword NOT IN ("
+                "SELECT keyword FROM stt_context_keywords ORDER BY timestamp DESC LIMIT 50)"
+            )
+            self.conn.commit()
+        except Exception as e:
+            print(f"Error saving context keywords: {e}")
+
+    def get_context_keywords(self, limit=25):
+        """Retrieve the most recent STT context keywords from SQLite."""
+        try:
+            self.cursor.execute(
+                "SELECT keyword FROM stt_context_keywords ORDER BY timestamp DESC LIMIT ?",
+                (limit,)
+            )
+            return [row[0] for row in self.cursor.fetchall()]
+        except Exception as e:
+            print(f"Error retrieving context keywords: {e}")
+            return []

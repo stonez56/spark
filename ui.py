@@ -1,22 +1,10 @@
-import asyncio
-import queue
 import logging
+import asyncio
 import json
-import builtins
-from datetime import datetime
+import queue
 
-# 全域 print 猴子補丁，保證 UI 子行程的每一行日誌輸出都有高精度的時間戳記，並強制 flush 避免緩衝
-_original_print = builtins.print
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-def timestamped_print(*args, **kwargs):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-    kwargs["flush"] = True
-    if args and isinstance(args[0], str) and (args[0].startswith("[202") or args[0].startswith("[2026-")):
-        _original_print(*args, **kwargs)
-    else:
-        _original_print(f"[{ts}]", *args, **kwargs)
-
-builtins.print = timestamped_print
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
@@ -212,6 +200,39 @@ async def update_settings(payload: dict):
         app.state.command_queue.put({'type': 'regenerate_cache'})
         
     return JSONResponse({"status": "ok"})
+
+# --- Location API Endpoints ---
+import location_manager
+
+@app.get("/api/location")
+async def get_location_endpoint():
+    return JSONResponse(location_manager.get_location())
+
+@app.post("/api/location")
+async def set_location_endpoint(payload: dict):
+    lat = payload.get("lat")
+    lon = payload.get("lon")
+    if lat is not None and lon is not None:
+        city, district = location_manager.reverse_geocode(lat, lon)
+        location_manager.save_location(city, district, lat, lon)
+        return JSONResponse({"status": "ok", "city": city, "district": district, "latitude": lat, "longitude": lon})
+    return JSONResponse({"status": "error", "message": "經緯度缺失"}, status_code=400)
+
+@app.post("/api/location/manual")
+async def set_location_manual_endpoint(payload: dict):
+    city = payload.get("city", "")
+    district = payload.get("district", "")
+    location_manager.save_location(city, district)
+    return JSONResponse({"status": "ok", "city": city, "district": district})
+
+@app.post("/api/location/autodetect")
+async def set_location_autodetect_endpoint():
+    loc = location_manager.auto_detect_ip()
+    if loc:
+        location_manager.save_location(loc["city"], loc["district"], loc["latitude"], loc["longitude"])
+        return JSONResponse({"status": "ok", "city": loc["city"], "district": loc["district"]})
+    return JSONResponse({"status": "error", "message": "IP 定位失敗"}, status_code=500)
+
 @app.post("/api/reset-db")
 async def reset_db_endpoint():
     try:

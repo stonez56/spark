@@ -976,10 +976,62 @@
             startBtn.style.display = 'block';
         }
 
+        async function initLocation() {
+            try {
+                const res = await fetch('/api/location');
+                const data = await res.json();
+                if (!data.city) {
+                    console.log("Location not set. Initializing automatic location detection...");
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                            async (position) => {
+                                const lat = position.coords.latitude;
+                                const lon = position.coords.longitude;
+                                try {
+                                    const setRes = await fetch('/api/location', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ lat, lon })
+                                    });
+                                    const setData = await setRes.json();
+                                    console.log("GPS Location automatically initialized:", setData.city, setData.district);
+                                } catch (e) {
+                                    await fallbackIPLocationSilent();
+                                }
+                            },
+                            async (error) => {
+                                await fallbackIPLocationSilent();
+                            },
+                            { timeout: 5000 }
+                        );
+                    } else {
+                        await fallbackIPLocationSilent();
+                    }
+                } else {
+                    console.log("Cached location loaded:", data.city, data.district);
+                }
+            } catch (e) {
+                console.error("Failed to check or initialize location:", e);
+            }
+        }
+
+        async function fallbackIPLocationSilent() {
+            try {
+                const res = await fetch('/api/location/autodetect', { method: 'POST' });
+                const data = await res.json();
+                if (res.ok && data.status === 'ok') {
+                    console.log("IP Location automatically initialized:", data.city, data.district);
+                }
+            } catch (e) {
+                console.error("IP fallback location failed:", e);
+            }
+        }
+
         // Init — poll status immediately; auto-start mic if already permitted
         pollStatus();
         connectWebSocket();
         tryAutoStart();
+        initLocation();
         setInterval(pollStatus, 30000);
     </script>
 </body>

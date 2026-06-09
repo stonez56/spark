@@ -4,26 +4,15 @@ import builtins
 import time
 from datetime import datetime
 
-# 全域 print 猴子補丁，保證主行程的每一行日誌輸出都有高精度的時間戳記，並強制 flush 避免緩衝
+# 全域 print 猴子補丁，為每一行日誌加上 [YYYY-MM-DD HH:MM:SS] 格式的時間戳記
 _original_print = builtins.print
 
-def timestamped_print(*args, **kwargs):
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-    kwargs["flush"] = True
-    if args and isinstance(args[0], str) and (args[0].startswith("[202") or args[0].startswith("[2026-")):
-        _original_print(*args, **kwargs)
-    else:
-        _original_print(f"[{ts}]", *args, **kwargs)
+def _timed_print(*args, **kwargs):
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _original_print(f"[{timestamp}]", *args, **kwargs)
 
-builtins.print = timestamped_print
+builtins.print = _timed_print
 
-# Environment configurations for Raspberry Pi 5 & clean logging
-os.environ["GPIOZERO_PIN_FACTORY"] = "lgpio"
-os.environ["ORT_LOGGING_LEVEL"] = "3"
-os.environ["OPENCV_LOG_LEVEL"] = "ERROR"
-os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
-os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
-warnings.filterwarnings("ignore", category=UserWarning, module="huggingface_hub")
 
 import threading
 import numpy as np
@@ -514,7 +503,8 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
                     full_audio = np.concatenate(stt_buffer)
                     print(f"[{get_timestamp()}] ── ASR START ─────────────────────────")
-                    transcription = stt.transcribe(full_audio)
+                    recent_history = memory.get_recent_history(limit=2)
+                    transcription = stt.transcribe(full_audio, chat_history=recent_history)
                     print(f"[{get_timestamp()}] 🎤 User said  : {transcription}")
 
                     import re

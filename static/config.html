@@ -219,6 +219,41 @@
         </div>
     </div>
 
+    <!-- Location & Localization Settings -->
+    <div class="panel">
+        <h2>📍 定位與在地化設定 (Location & Localization)</h2>
+        <p style="font-size: 13px; color: #888; margin-bottom: 12px; line-height: 1.4;">
+            設定本喵的物理位置。這能讓本喵更精準辨識在地景點（如「圓山」）、自動為天氣與景點搜尋補上地區前綴喵！
+        </p>
+        
+        <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <div style="font-size: 14px; color: #aaa; margin-bottom: 4px;">目前系統定位：</div>
+                <div id="current-location-display" style="font-size: 16px; font-weight: 700; color: #00ffff;">未定位 (無快取)</div>
+            </div>
+            <button class="btn-primary" id="btn-detect-location" onclick="detectLocationAuto()" style="font-size: 13px; padding: 8px 16px;">
+                🔄 自動偵測位置
+            </button>
+        </div>
+        
+        <div style="display: flex; gap: 10px;">
+            <div class="form-group" style="flex: 1;">
+                <label>手動輸入縣市 (City/County)</label>
+                <input type="text" id="manual-city" placeholder="例如: 台北市, 新北市">
+            </div>
+            <div class="form-group" style="flex: 1;">
+                <label>手動輸入行政區 (District)</label>
+                <input type="text" id="manual-district" placeholder="例如: 士林區, 板橋區">
+            </div>
+        </div>
+        
+        <div style="display:flex; align-items:center; gap:10px; margin-top: 10px;">
+            <button class="btn-primary" id="save-location-btn" onclick="saveManualLocation()">儲存位置設定</button>
+            <div id="location-spinner" class="spinner"></div>
+            <span id="location-msg" style="font-size:13px; display:none; color: #00ffff;"></span>
+        </div>
+    </div>
+
     <!-- Personalization Settings -->
     <div class="panel">
         <h2>👤 稱呼設定 (Personalization)</h2>
@@ -578,10 +613,152 @@
     }
 
 
+    // --- Location Settings Logic ---
+    async function loadLocation() {
+        try {
+            const res = await fetch('/api/location');
+            const data = await res.json();
+            showCurrentLocation(data.city, data.district);
+            document.getElementById('manual-city').value = data.city || '';
+            document.getElementById('manual-district').value = data.district || '';
+        } catch(e) { console.error(e); }
+    }
+
+    function showCurrentLocation(city, district) {
+        const display = document.getElementById('current-location-display');
+        if (city || district) {
+            display.innerText = `${city} ${district}`.trim();
+        } else {
+            display.innerText = '未定位 (無快取)';
+        }
+    }
+
+    async function detectLocationAuto() {
+        const btn = document.getElementById('btn-detect-location');
+        const spinner = document.getElementById('location-spinner');
+        const msg = document.getElementById('location-msg');
+        
+        btn.disabled = true;
+        spinner.style.display = 'block';
+        msg.style.display = 'inline';
+        msg.style.color = '#ffcc00';
+        msg.innerText = '正在偵測地理位置...';
+        
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    try {
+                        const res = await fetch('/api/location', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ lat, lon })
+                        });
+                        const data = await res.json();
+                        if (data.status === 'ok') {
+                            msg.style.color = '#00ffff';
+                            msg.innerText = 'GPS 定位與逆向解析成功喵！';
+                            showCurrentLocation(data.city, data.district);
+                            document.getElementById('manual-city').value = data.city || '';
+                            document.getElementById('manual-district').value = data.district || '';
+                        } else {
+                            await fallbackIPLocation(msg);
+                        }
+                    } catch (e) {
+                        await fallbackIPLocation(msg);
+                    } finally {
+                        btn.disabled = false;
+                        spinner.style.display = 'none';
+                        setTimeout(() => msg.style.display = 'none', 3000);
+                    }
+                },
+                async (error) => {
+                    console.warn("GPS positioning failed or denied, falling back to IP...");
+                    await fallbackIPLocation(msg);
+                    btn.disabled = false;
+                    spinner.style.display = 'none';
+                    setTimeout(() => msg.style.display = 'none', 3000);
+                },
+                { timeout: 5000 }
+            );
+        } else {
+            await fallbackIPLocation(msg);
+            btn.disabled = false;
+            spinner.style.display = 'none';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        }
+    }
+
+    async function fallbackIPLocation(msgElement) {
+        msgElement.innerText = 'GPS 不可用，嘗試使用 IP 進行自動定位...';
+        try {
+            const res = await fetch('/api/location/autodetect', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok && data.status === 'ok') {
+                msgElement.style.color = '#00ffff';
+                msgElement.innerText = 'IP 自動定位成功喵！';
+                showCurrentLocation(data.city, data.district);
+                document.getElementById('manual-city').value = data.city || '';
+                document.getElementById('manual-district').value = data.district || '';
+            } else {
+                msgElement.style.color = '#ff4444';
+                msgElement.innerText = 'IP 定位失敗，請手動輸入位置喵！';
+            }
+        } catch (e) {
+            msgElement.style.color = '#ff4444';
+            msgElement.innerText = '定位請求失敗，請手動輸入位置喵！';
+        }
+    }
+
+    async function saveManualLocation() {
+        const city = document.getElementById('manual-city').value.trim();
+        const district = document.getElementById('manual-district').value.trim();
+        if (!city) {
+            alert('請至少填寫縣市名稱喵！');
+            return;
+        }
+        
+        const btn = document.getElementById('save-location-btn');
+        const spinner = document.getElementById('location-spinner');
+        const msg = document.getElementById('location-msg');
+        
+        btn.disabled = true;
+        spinner.style.display = 'block';
+        msg.style.display = 'inline';
+        msg.style.color = '#ffcc00';
+        msg.innerText = '正在儲存位置...';
+        
+        try {
+            const res = await fetch('/api/location/manual', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ city, district })
+            });
+            const data = await res.json();
+            if (res.ok && data.status === 'ok') {
+                msg.style.color = '#00ffff';
+                msg.innerText = '手動位置儲存成功喵！';
+                showCurrentLocation(data.city, data.district);
+            } else {
+                msg.style.color = '#ff4444';
+                msg.innerText = '儲存失敗';
+            }
+        } catch (e) {
+            msg.style.color = '#ff4444';
+            msg.innerText = '連線失敗';
+        } finally {
+            btn.disabled = false;
+            spinner.style.display = 'none';
+            setTimeout(() => msg.style.display = 'none', 3000);
+        }
+    }
+
     // Init
     fetchStatus();
     loadSettings();
     loadReminders();
+    loadLocation();
 </script>
 
 </body>
