@@ -684,7 +684,7 @@ class OllamaBrain:
             if self.mode == "cloud":
                 res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high", stream=stream)
             else:
-                res = self._local_generate(prompt, stream=stream)
+                res = self._local_generate(prompt, options={"num_predict": 250, "temperature": 0.4, "repeat_penalty": 1.1}, stream=stream)
             
             if stream:
                 def clean_stream():
@@ -965,7 +965,7 @@ class OllamaBrain:
                     full_prompt = f"Previous Context:\n{context_history}\n\n" + full_prompt
                 
                 # 依據 prompt 屬性決定 local 生成的最大 token 限制，強防重複退化死循環
-                limit_predict = 180 if is_knowledge_query else 60
+                limit_predict = 250 if is_knowledge_query else 120
                 res = self._local_generate(
                     full_prompt,
                     options={"temperature": 0.4, "repeat_penalty": 1.05, "num_predict": limit_predict},
