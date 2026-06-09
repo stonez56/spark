@@ -43,6 +43,13 @@ OPENROUTER_API_KEY  = os.getenv("OPENROUTER_APIKEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 
+# ──────────────────────────────────────────
+# 中央氣象署 Open Data API key
+# ──────────────────────────────────────────
+# 免費申請：https://opendata.cwa.gov.tw/user/authkey
+# 不設定時自動使用公開示範金鑰（限流較嚴）
+CWA_API_KEY = os.getenv("CWA_API_KEY", "")
+
 # ── Cloud TEXT & VISION models (using OpenRouter API) ──────────────────
 CLOUD_TEXT_MODEL   = "openai/gpt-oss-120b:free"
 CLOUD_VISION_MODEL = "moondream"

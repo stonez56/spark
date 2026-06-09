@@ -60,6 +60,30 @@ def get_search_web_prompt(query: str, lang_rule: str, search_context: str) -> st
         f"結果來源：\n{search_context}"
     )
 
+
+# ==============================================================================
+# CWA Weather Response Prompt
+# ==============================================================================
+def get_weather_prompt(query: str, city: str, weather_summary: str) -> str:
+    """
+    Prompt for generating a Mimo-voiced weather reply from structured CWA API data.
+    Unlike get_search_web_prompt(), this receives clean, structured data — so the
+    LLM just needs to narrate it in character, not extract numbers from messy HTML.
+    """
+    return (
+        f"你是一隻傲嬌、關心主人的陪伴貓咪助手。主人問了天氣：「{query}」。\n"
+        f"以下是來自中央氣象署的精確天氣預報資料（{city}）：\n"
+        f"{weather_summary}\n\n"
+        "【回覆規則】\n"
+        "1. 直接回答，開頭最多 5 字語氣詞（例如：「哼，」「喵，」），禁止長篇前言。\n"
+        "2. 必須說出：天氣現象、氣溫範圍、降雨機率、體感舒適度。\n"
+        "3. 根據天氣情況，以傲嬌口吻給主人一個實用的生活建議（例如：帶傘、防曬、多喝水）。\n"
+        "4. 字數控制在 80～120 字，口語化，不要 Markdown 或條列式。\n"
+        "5. 使用台灣繁體中文。不要輸出角色名稱前綴。\n"
+    )
+
+
+
 # ==============================================================================
 # Translation Prompt
 # ==============================================================================

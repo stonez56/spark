@@ -204,6 +204,11 @@ class OllamaBrain:
         self._call_count = 0
         self.DAILY_LIMIT = 50  # free tier default; set to 1000 if you have $10+ credits
 
+        # ── Session boundary timestamp ──────────────────────────────────────
+        # Recorded once at startup. Used to exclude cross-session conversation
+        # history when inferring the active city for location-aware searches.
+        self._session_start = datetime.now().isoformat()
+
         self.search_rewrite_mode = settings.get("search_rewrite_mode", "legacy")
 
         if self.mode == "cloud":
@@ -321,6 +326,14 @@ class OllamaBrain:
         Snappily falls back to local Ollama immediately if rate-limited (429), not found (404),
         or if any cloud call fails, avoiding slow retry loops."""
         primary_model = self.text_model
+        if self.mode == "local" or primary_model == LOCAL_TEXT_MODEL:
+            import settings_manager
+            _s = settings_manager.load_settings()
+            primary_model = _s.get("cloud_text_model", CLOUD_TEXT_MODEL)
+
+        if not hasattr(self, "_cloud_client") or self._cloud_client is None:
+            self._init_cloud_client()
+
         last_error = None
 
         extra_body = {}
@@ -592,6 +605,40 @@ class OllamaBrain:
         search_target = self.refine_search_query(query)
         print(f"[Brain Search Web] Refined query: '{query}' -> '{search_target}'")
 
+        # ── Priority 1: Weather queries → CWA Open Data API ─────────────────
+        # CWA provides structured, authoritative real-time forecast data.
+        # This completely bypasses DDG web search for weather intent, avoiding
+        # the "found only historical/travel articles" failure mode.
+        try:
+            import weather as weather_mod
+            if weather_mod.is_weather_query(query):
+                import location_manager, settings_manager as _sm
+                loc = location_manager.get_location()
+                city = loc.get("city", "") or _sm.load_settings().get("city", "新竹市")
+                print(f"[Brain Weather] Detected weather query. Fetching CWA data for '{city}'...")
+                cwa_data = weather_mod.get_weather(city)
+                if cwa_data:
+                    weather_summary = weather_mod.format_weather_for_llm(cwa_data)
+                    print(f"[Brain Weather] CWA data OK:\n{weather_summary}")
+                    prompt = prompts.get_weather_prompt(query, cwa_data["city"], weather_summary)
+                    if self.mode == "cloud":
+                        res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low", stream=stream)
+                    else:
+                        res = self._local_generate(prompt, options={"num_predict": 200, "temperature": 0.5, "repeat_penalty": 1.1}, stream=stream)
+                    if stream:
+                        def _clean_cwa_stream():
+                            for chunk in res:
+                                yield clean_traditional_chinese(chunk)
+                        return _clean_cwa_stream()
+                    else:
+                        return clean_traditional_chinese(res)
+                else:
+                    print(f"[Brain Weather] CWA API returned no data for '{city}'. Falling back to DDG.")
+        except Exception as _we:
+            print(f"[Brain Weather] CWA weather module error: {_we}. Falling back to DDG.")
+
+
+
         # 3. 在地化搜尋詞自動補全：結合對話話題定位或本地物理定位
         try:
             import location_manager
@@ -606,15 +653,18 @@ class OllamaBrain:
                 district = _s.get("district", "")
 
             taiwan_cities = ["台北", "新北", "基隆", "桃園", "新竹", "苗栗", "台中", "彰化", "南投", "雲林", "嘉義", "台南", "高雄", "屏東", "宜蘭", "花蓮", "台東", "澎湖", "金門", "馬祖"]
-            active_city = city
+            active_city = city  # default: GPS/settings city
 
-            
-            # 從對話歷史偵測當前討論的縣市話題
+            # ── Scan current-session history ONLY for city topic ────────────
+            # We deliberately scope to self._session_start so that a previous
+            # session discussing 桃園 doesn't pollute a fresh boot asking about
+            # the user's actual location (新竹). Cross-session bleed was the
+            # cause of "桃園天氣" when the user's GPS shows 新竹.
             try:
                 from memory import MimoMemory
                 memory = MimoMemory()
-                history = memory.get_recent_history(limit=2)
-                for user_input, spark_response in history:
+                session_history = memory.get_recent_history_since(self._session_start, limit=10)
+                for user_input, spark_response in session_history:
                     found = False
                     for tc in taiwan_cities:
                         if tc in user_input or tc in spark_response:
@@ -623,8 +673,12 @@ class OllamaBrain:
                             break
                     if found:
                         break
+                if active_city != city:
+                    print(f"[Brain Search Web] Session city override: '{city}' -> '{active_city}' (from current-session history)")
+                else:
+                    print(f"[Brain Search Web] Using GPS city: '{city}' (no city found in current-session history)")
             except Exception as ex:
-                print(f"Error scanning history for active city: {ex}")
+                print(f"Error scanning session history for active city: {ex}")
                 
             location_prefix = active_city
             if active_city == city and district:

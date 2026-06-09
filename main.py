@@ -616,6 +616,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
                     if not cleaned_text:
                         print(f"[{get_timestamp()}] [System] No meaningful speech detected (only silence or punctuation). Returning to Idle.")
+                        tts_queue.put(b'\x02')  # Stop thinking filler audio immediately
                         while not audio_queue.empty():
                             try:
                                 audio_queue.get_nowait()

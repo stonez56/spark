@@ -22,8 +22,10 @@ Mimo 更設計了專門為樹莓派 5 打造的實體外觀硬體擴充規格，
 * **🎨  midnight-indigo 玻璃擬態 UI**：主頁面包含精美 Aurora 霓虹光暈，動態 SVG 貓耳與貓鬚會隨著 Mimo 的狀態（聆聽時抖耳、思考時飛機耳、說話時開合共振）進行微動畫，並附有實體互動面板。
 * **🛠️ 軟硬體雙軌降級防護**：實體硬體驅動（OLED、舵機、觸控、OpenCV 人臉追蹤）與大腦完全解耦。在沒有硬體連接的 PC 環境下，會自動以降級的 Mock 模擬模式運行並輸出 Log，絕不崩潰。
 * **🗺️ IP 位置感知搜尋 (IP-based Location Awareness)**：首次啟動時自動以 IP 定位取得使用者所在城市（如「新竹市」），並持久化儲存於 `settings.json`，日後開機直接讀取無需每次重測。設定頁面 (`/config`) 可查看並手動修正目前偵測到的城市，所有地名一律轉換為台灣繁體中文。
-* **🧵 跨回合對話城市上下文 (Cross-turn City Context for Search)**：當使用者在任一意圖（聊天、網頁搜尋、拍照等）中提及某縣市（如「新竹有什麼好玩的？」），Mimo 會在後續問句（如「有什麼名產可以買？」）中自動從 SQLite 對話歷史讀取最近提及的城市，將搜尋詞偏置為「新竹市 名產可以買 美食 推薦」，而非錯誤地使用裝置物理位置（如台北市士林區），確保地域型問答的精準度。
+* **🧵 Session 邊界城市上下文防跨回合污染 (Session-bounded City Context)**：城市上下文掃描改為僅讀取**當次開機後**的對話歷史（`memory.get_recent_history_since(session_start)`），防止前一 Session 提及的城市（如「桃園」）污染全新開機後的天氣搜尋。若當次 Session 內未提及任何縣市，一律回退使用 GPS 城市（如「新竹市」）。
 * **🔍 LLM 智慧搜尋問句改寫 (LLM-based Search Query Rewriting)**：捨棄傳統硬編碼的口語贅詞過濾清單（Fluff List），改由 LLM 智慧將使用者的口語化問句改寫為 5 字以內的純搜尋引擎關鍵字（例如：「今年的天氣如何」➔「天氣預報 氣溫」），並在異常時自動降級回 legacy 規則式過濾，大幅提升搜尋精準度。
+* **🌦️ 中央氣象署 Open Data 天氣模組 (CWA Weather API)**：天氣類查詢優先呼叫台灣中央氣象署官方 Open Data API（`F-C0032-001`，36 小時縣市預報），取得精確的氣溫、降雨機率、體感舒適度等結構化資料，完全取代不穩定的 DDG 網頁爬蟲。支援 22 個縣市自動對應，並在 API 不可用時無縫降級至 DDG 搜尋。詳見 `weather.py`。
+* **🔇 TTS 單位符號中文化預處理 (TTS Unit Symbol Sinicization)**：在雙語語言切割器執行前，`tts.py` 的 `_preprocess_text()` 先跑一輪 `UNIT_SUBS` 替換表，將 `°C→度`、`°F→華氏度`、`km/h→公里每小時`、`WiFi→無線網路` 等單位符號與縮寫全部轉換為中文，避免孤立的英文字母（如 `C`、`F`）被語言切割器誤判為英文段落並由英文 TTS 語音讀出，造成令人出戲的雙聲道切換。
 
 ---
 
@@ -70,11 +72,18 @@ pip install -r requirements.txt
 cp .env.example .env
 nano .env  # 填入您的 Key
 ```
-在 `.env` 中填入以下內容（若使用 Cloud 模式）：
+在 `.env` 中填入以下內容：
 ```env
-# OpenRouter API 金鑰
+# OpenRouter API 金鑰（Cloud 模式必填）
 OPENROUTER_APIKEY=sk-or-xxxxxxxxxxxxxxxxxx
+
+# 中央氣象署 Open Data 金鑰（免費申請：https://opendata.cwa.gov.tw/user/authkey）
+# ⚠️ 若金鑰含有 = 號，必須用引號包住，否則 dotenv 會截斷！
+CWA_API_KEY="CWA-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+# 不填時自動使用公開示範金鑰（rdec-key-123-45678-011121314），限流較嚴
 ```
+
+> **注意**：CWA API 金鑰格式為 `CWA-XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX`（UUID 格式）。金鑰中含有 `=` 號時，**必須用雙引號包住整個值**，否則 `python-dotenv` 會在第一個 `=` 處截斷，導致金鑰失效。
 
 ### 5. 下載 Piper TTS 雙語語音模型
 Mimo 使用 **Piper TTS** 進行高清晰的中英雙語語音合成：
@@ -149,6 +158,7 @@ main.py                  ← 主進程，管理 state machine 狀態流與語音
 ├── reminders_db.py      ← 叮嚀排程資料庫 (reminders.db, SQLite)
 ├── location_manager.py  ← IP 位置感知模組（首次啟動自動偵測城市，持久化至 settings.json）
 ├── settings_manager.py  ← 設定檔管理器 (settings.json)
+├── weather.py           ← 中央氣象署 CWA Open Data 天氣模組（F-C0032-001，36hr 縣市預報）
 ├── state_machine.py     ← 系統狀態定義 (IDLE/LISTENING/THINKING/SPEAKING 等)
 ├── ui.py                ← FastAPI + WebSocket 後端服務
 ├── config.py            ← 全域參數配置文件 (模型配置、API keys、硬體 GPIO 等)
@@ -201,6 +211,13 @@ Mimo 的雲端大腦支援多種 OpenRouter 模型，並提供「推理模式（
 * `llama3.2:3b` / `gemma3:1b` — 本地邊緣運算首選大腦與意圖路由模型，完全脫網運行，反應時間小於 1.5 秒。
 * `moondream` — 本地視覺分析模型，用於 Mimo 拍照看圖時的本地圖文理解。
 
+### 4. 🔍 搜尋字詞改寫模式 (Search Query Rewrite Mode)
+此模式決定系統在發送搜尋引擎（DuckDuckGo）請求前，如何將使用者的口語化句子精煉為精準關鍵字。可在設定頁面中切換三種模式：
+* **⚡ 規則快篩 (legacy)**：使用簡化的正則表達式快速過濾贅詞與疑問詞，`0 毫秒` 延遲，能滿足基本搜尋需要。
+* **🤖 本地 LLM 改寫 (local_llm)**：使用本機運行的 Ollama 模型進行智慧改寫，既有語意理解能力，又免受網路波動與延遲影響。
+* **☁️ 雲端 LLM 改寫 (cloud_llm)**：使用配置好的雲端 API 大模型進行最精準的改寫。適合複雜的口語情境，在 dialogue mode 為 local 且 routing mode 為 cloud 時，系統會自動在後台完成模型匹配與轉換。
+
+
 ---
 
 ## ⏱️ 工業級延遲優化里程碑 (Industrial Latency Optimization Milestones)
@@ -229,7 +246,30 @@ Mimo 的雲端大腦支援多種 OpenRouter 模型，並提供「推理模式（
 
 7. **LLM 智慧搜尋問句改寫 (LLM-based Search Query Rewriting)**
    - **優化前**：使用規則式與硬編碼的口語贅詞過濾清單（Fluff List）來清理搜尋問句，此方式無法擴展，極易因為千奇百怪的口語詞彙（如「今年的天氣如何」）而使搜尋引擎匹配到不相關的網頁（例如 Wikipedia 年平均氣候條目）。
-   - **優化後**：移除硬編碼的 Fluff List，改由 LLM（本地 Gemma 或雲端模型）智慧改寫為 5 字以內的純搜尋引擎關鍵字（如「天氣預報 氣溫」），並在 LLM 失敗時自動無縫降級回 legacy 規則式過濾，既保障了理解深度與準確度，又徹底免除了人工維護過濾詞庫的成本喵！
+   - **優化後**：移除硬編碼 of Fluff List，改由 LLM（本地 Gemma 或雲端模型）智慧改寫為 5 字以內的純搜尋引擎關鍵字（如「天氣預報 氣溫」），並在 LLM 失敗時自動無縫降級回 legacy 規則式過濾，既保障了理解深度與準確度，又徹底免除了人工維護過濾詞庫的成本喵！
+
+8. **🎨 Web UI 玻璃擬態版面防溢出與快取標頭防護 (Layout Containment & Caching Defense)**
+   - **優化前**：網頁版面以百分比分配高度且 `body` 設為 `min-height: 100vh;`，當對話紀錄增長時會將下方的擼貓、音量、體溫模擬按鈕擠出螢幕之外；且瀏覽器常會強烈快取 `config.html` 與 JS，導致新程式碼更新時，使用者加載舊版快取而無法看到新面板。
+   - **優化後**：在 [index.html](file:///home/user/spark/static/index.html) 中限制 `body` 高度為固定的 `height: 100vh;` 並使用 `@media (max-height: 750px)` 與 `@media (max-height: 600px)` 響應式縮小貓臉 SVG 與最大對話框高度，提供清晰易見的高對比度捲軸。並在 [ui.py](file:///home/user/spark/ui.py) 端針對主頁與設定頁回傳帶有 `Cache-Control: no-store` 標頭，徹底免除快取污染。
+
+9. **☁️ 雲端與意圖辨識獨立設定面板 (Independent Cloud Settings Panel)**
+   - **優化後**：在設定頁面中建立獨立的 `☁️ 雲端模型設定` 面板，將「雲端模型選擇」與「深度思考」從「大腦對話模式」面板中徹底解耦。即使主人選擇「本地大腦對話 (Local) + 雲端意圖辨識 (Cloud)」，也能夠非常清晰且獨立地在專屬面板中設定所需的雲端模型與參數。
+
+10. **🔌 OpenRouter 400 錯誤與自動客戶端初始化 (OpenRouter 400 Fix & Client Auto-Init)**
+    - **優化後**：當 Dialogue Mode 設為 Local 且 Intent Routing 設為 Cloud 時，修正 `_cloud_chat()`，使其能智慧識別本地模型 ID（如 `llama3.2:3b`），自動從設定檔載入 `cloud_text_model` 發起請求，解決 OpenRouter 報 400 Bad Request 的 model ID 錯誤；同時當偵測到客戶端未初始化時，在對話時自動執行 `_init_cloud_client()` 初始化連線。
+
+11. **🌦️ 中央氣象署 Open Data 天氣 API 整合 (CWA Weather API Integration)**
+    - **問題前**：天氣查詢走 DuckDuckGo 網頁搜尋，常因爬到景點介紹、歷史資料等不相關結果而回答「目前無法取得精確數據」。
+    - **優化後**：新增 `weather.py` 模組，在 `brain.py` 的 `search_web()` 中，偵測到天氣意圖時**優先呼叫 CWA Open Data API**（`F-C0032-001`，36 小時縣市預報），取得包含天氣現象、氣溫、降雨機率、體感舒適度的結構化 JSON 資料，直接以 `get_weather_prompt()` 格式化後送入 LLM，Mimo 可精準播報「今晚新竹市：陰陣雨或雷雨，23～24 度，降雨機率 100%，體感舒適」。API 不可用時自動降級至 DDG。支援 22 縣市別名對應與 OpenSSL 3.x SSL 自動 fallback。
+    - **API 金鑰**：免費申請：[opendata.cwa.gov.tw/user/authkey](https://opendata.cwa.gov.tw/user/authkey)，設定至 `.env` 的 `CWA_API_KEY`（值需用引號包住）。不填時使用公開示範金鑰。
+
+12. **🔇 TTS 單位符號中文化前處理 (TTS Unit Sinicization Pre-pass)**
+    - **問題前**：`°C` 被雙語語言切割器拆分為 `氣溫在十八°`（中文聲音）+ `C`（英文聲音），造成令人出戲的雙聲道切換，英文 TTS 額外說出一個孤立的「C」。
+    - **優化後**：在 `tts.py` 的 `_preprocess_text()` 中，語言切割**前**先執行 `UNIT_SUBS` 替換表：`°C→度`、`°F→華氏度`、`km/h→公里每小時`、`WiFi→無線網路`、`USB→通用序列匯流排` 等。切割器接收到的文字中再無孤立英文字母，全程單一中文聲音播報。
+
+13. **📍 Session 邊界城市上下文防污染 (Session-bounded City Context)**
+    - **問題前**：`search_web()` 呼叫 `memory.get_recent_history(limit=2)` 讀取**全跨 Session** SQLite 歷史，若前一次開機對話提到「桃園」，重啟後第一次問天氣仍然查詢桃園天氣，忽略使用者 GPS 城市（新竹）。
+    - **優化後**：`OllamaBrain.__init__()` 記錄 `self._session_start = datetime.now().isoformat()`；`memory.py` 新增 `get_recent_history_since(since_iso, limit)` 方法；`search_web()` 城市掃描改為僅讀取當次開機後的對話，若無命中，一律使用 GPS 城市，徹底消除跨 Session 城市污染。
 
 ---
 
