@@ -18,17 +18,69 @@ def get_location():
 def save_location(city, district, latitude=None, longitude=None):
     """
     Save location settings to settings.json.
+    Writes both user_city/user_district (canonical) and city/district (legacy)
+    so all modules (brain.py etc.) always read consistent values.
     """
     settings = settings_manager.load_settings()
-    settings["user_city"] = city.strip() if city else ""
-    settings["user_district"] = district.strip() if district else ""
+    clean_city = city.strip() if city else ""
+    clean_district = district.strip() if district else ""
+    settings["user_city"] = clean_city
+    settings["user_district"] = clean_district
+    # Keep legacy keys in sync for brain.py compatibility
+    settings["city"] = clean_city
+    settings["district"] = clean_district
     if latitude is not None:
         settings["user_latitude"] = float(latitude)
     if longitude is not None:
         settings["user_longitude"] = float(longitude)
     settings_manager.save_settings(settings)
-    print(f"[LocationManager] Location saved: {city} {district} (Lat: {latitude}, Lon: {longitude})")
+    print(f"[LocationManager] Location saved: {clean_city} {clean_district} (Lat: {latitude}, Lon: {longitude})")
     return get_location()
+
+ENG_TO_ZH_CITIES = {
+    "taipei city": "台北市",
+    "taipei": "台北市",
+    "new taipei city": "新北市",
+    "new taipei": "新北市",
+    "taoyuan city": "桃園市",
+    "taoyuan": "桃園市",
+    "taichung city": "台中市",
+    "taichung": "台中市",
+    "tainan city": "台南市",
+    "tainan": "台南市",
+    "kaohsiung city": "高雄市",
+    "kaohsiung": "高雄市",
+    "hsinchu city": "新竹市",
+    "hsinchu": "新竹市",
+    "hsinchu county": "新竹縣",
+    "miaoli county": "苗栗縣",
+    "miaoli": "苗栗縣",
+    "changhua county": "彰化縣",
+    "changhua": "彰化縣",
+    "nantou county": "南投縣",
+    "nantou": "南投縣",
+    "yunlin county": "雲林縣",
+    "yunlin": "雲林縣",
+    "chiayi city": "嘉義市",
+    "chiayi county": "嘉義縣",
+    "chiayi": "嘉義市",
+    "pingtung county": "屏東縣",
+    "pingtung": "屏東縣",
+    "yilan county": "宜蘭縣",
+    "yilan": "宜蘭縣",
+    "hualien county": "花蓮縣",
+    "hualien": "花蓮縣",
+    "taitung county": "台東縣",
+    "taitung": "台東縣",
+    "penghu county": "澎湖縣",
+    "penghu": "澎湖縣",
+    "kinmen county": "金門縣",
+    "kinmen": "金門縣",
+    "lienchiang county": "連江縣",
+    "matsu": "連江縣",
+    "keelung city": "基隆市",
+    "keelung": "基隆市"
+}
 
 def auto_detect_ip():
     """
@@ -49,8 +101,13 @@ def auto_detect_ip():
                 lon = data.get("lon", None)
                 
                 # In Taiwan, ip-api regionName often is 'Taipei City' or 'New Taipei City'
-                # Let's clean it up to Chinese if needed, though lang=zh-TW usually returns Chinese already.
                 resolved_city = region_name if region_name else city
+                
+                # Map English city name to Traditional Chinese if matches
+                mapped_city = ENG_TO_ZH_CITIES.get(resolved_city.lower())
+                if mapped_city:
+                    resolved_city = mapped_city
+                
                 print(f"[LocationManager] IP Geolocation Success: {resolved_city} (Lat: {lat}, Lon: {lon})")
                 return {
                     "city": resolved_city,

@@ -112,13 +112,28 @@ class MimoMemory:
         else:
             texts = text_list_or_str
             
+        # Convert any simplified characters to traditional using clean_traditional_chinese
+        try:
+            from brain import clean_traditional_chinese
+            texts = [clean_traditional_chinese(t) for t in texts]
+        except Exception as e:
+            print(f"Error importing clean_traditional_chinese in memory: {e}")
+            
         import re
         stop_words = {
             "這個", "那個", "什麼", "什麼是", "怎麼", "如何", "為何", "為什麼", "這樣", "那樣",
             "本喵", "主人", "奴才", "你們", "我們", "他們", "自己", "一個", "一些", "一下", "一次",
             "可以", "幫我", "需要", "不要", "不用", "可以嗎", "好嗎", "好的", "哼", "喵", "喵～",
-            "的", "了", "在", "是", "我", "你", "他", "她", "它", "們", "這", "那", "都", "不", "也"
+            "的", "了", "在", "是", "我", "你", "他", "她", "它", "們", "這", "那", "都", "不", "也",
+            "推薦", "介紹", "分享", "影片", "播放", "訂閱", "按讚", "頻道", "哈哈", "說明", "使用", 
+            "進行", "提供", "包含", "點擊", "設計", "步驟", "開啟", "管理", "哈", "嗯", "喔", "啦"
         }
+        
+        political_blacklist = [
+            "習近平", "习近平", "中南海", "共產黨", "共产党", "蔡英文", "賴清德", "赖清德",
+            "政治", "政府", "政策", "國家", "国家", "毛澤東", "毛泽东", "鄧小平", "邓小平",
+            "江澤民", "江泽民", "胡錦濤", "胡涛", "李克強", "李克强", "習大大", "习大大"
+        ]
         
         timestamp = datetime.now().isoformat()
         extracted = []
@@ -131,9 +146,12 @@ class MimoMemory:
                 if not p:
                     continue
                 if re.match(r'^[\u4e00-\u9fff]+$', p):
-                    if 2 <= len(p) <= 8 and p not in stop_words:
-                        extracted.append(p)
-                        
+                    # We limit the length to 2-5 characters to avoid long arbitrary phrases, 
+                    # and ensure it's not a stop word or political term.
+                    if 2 <= len(p) <= 5 and p not in stop_words:
+                        if not any(black in p for black in political_blacklist):
+                            extracted.append(p)
+                            
         if not extracted:
             return
             

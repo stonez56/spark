@@ -21,8 +21,12 @@ Mimo 更設計了專門為樹莓派 5 打造的實體外觀硬體擴充規格，
   * 設定 `6.0` 秒嚴格超時，一旦雲端異常，**0.1 秒內無縫切換至本地 Ollama (`gemma3:1b`)**，語音 TTS 播放絕無卡頓，流暢度提升 300%！
 * **🎨  midnight-indigo 玻璃擬態 UI**：主頁面包含精美 Aurora 霓虹光暈，動態 SVG 貓耳與貓鬚會隨著 Mimo 的狀態（聆聽時抖耳、思考時飛機耳、說話時開合共振）進行微動畫，並附有實體互動面板。
 * **🛠️ 軟硬體雙軌降級防護**：實體硬體驅動（OLED、舵機、觸控、OpenCV 人臉追蹤）與大腦完全解耦。在沒有硬體連接的 PC 環境下，會自動以降級的 Mock 模擬模式運行並輸出 Log，絕不崩潰。
+* **🗺️ IP 位置感知搜尋 (IP-based Location Awareness)**：首次啟動時自動以 IP 定位取得使用者所在城市（如「新竹市」），並持久化儲存於 `settings.json`，日後開機直接讀取無需每次重測。設定頁面 (`/config`) 可查看並手動修正目前偵測到的城市，所有地名一律轉換為台灣繁體中文。
+* **🧵 跨回合對話城市上下文 (Cross-turn City Context for Search)**：當使用者在任一意圖（聊天、網頁搜尋、拍照等）中提及某縣市（如「新竹有什麼好玩的？」），Mimo 會在後續問句（如「有什麼名產可以買？」）中自動從 SQLite 對話歷史讀取最近提及的城市，將搜尋詞偏置為「新竹市 名產可以買 美食 推薦」，而非錯誤地使用裝置物理位置（如台北市士林區），確保地域型問答的精準度。
+* **🔍 LLM 智慧搜尋問句改寫 (LLM-based Search Query Rewriting)**：捨棄傳統硬編碼的口語贅詞過濾清單（Fluff List），改由 LLM 智慧將使用者的口語化問句改寫為 5 字以內的純搜尋引擎關鍵字（例如：「今年的天氣如何」➔「天氣預報 氣溫」），並在異常時自動降級回 legacy 規則式過濾，大幅提升搜尋精準度。
 
 ---
+
 
 ## 🛠️ 系統需求 (System Requirements)
 
@@ -143,6 +147,7 @@ main.py                  ← 主進程，管理 state machine 狀態流與語音
 ├── audio_cache.py       ← 貓咪專屬 Filler 語音預生成與快取系統
 ├── memory.py            ← chromaDB 向量對話記憶（mimo_chroma_db）
 ├── reminders_db.py      ← 叮嚀排程資料庫 (reminders.db, SQLite)
+├── location_manager.py  ← IP 位置感知模組（首次啟動自動偵測城市，持久化至 settings.json）
 ├── settings_manager.py  ← 設定檔管理器 (settings.json)
 ├── state_machine.py     ← 系統狀態定義 (IDLE/LISTENING/THINKING/SPEAKING 等)
 ├── ui.py                ← FastAPI + WebSocket 後端服務
@@ -218,7 +223,16 @@ Mimo 的雲端大腦支援多種 OpenRouter 模型，並提供「推理模式（
 5. **智慧雙軌推理模式開關 (Dual-track Reasoning Toggle)**
    - **優化後**：在設定面板中新增「深度思考/推理模式」開關。一般問答預設關閉以維持 `2 - 3 秒` 的快速生成，僅在使用者有深度推理需求時才手動開啟，避免免費推理模型帶來的額外延遲。
 
+6. **全意圖記憶持久化與跨回合城市上下文 (Full-intent Memory Persistence & Cross-turn City Context)**
+   - **問題**：`memory.add_interaction()` 原本只在 `chat` 意圖分支中呼叫，導致 `search_web`、`take_photo` 等所有其他意圖的回覆**從未**寫入 SQLite 對話歷史，使得後續問句無法從歷史中讀取到上下文城市，錯誤地以裝置物理定位回答（如問新竹名產，卻回答士林景點）。
+   - **優化後**：將 `memory.add_interaction()` 移至整個意圖處理鏈末端，**統一持久化所有語音對話**。並擴充 `search_web` 中的地理敏感詞清單（新增「名產」、「伴手禮」、「好玩」、「踏青」等），確保後續問句能正確從最近對話歷史讀取討論的縣市，將搜尋詞精準偏置（如「新竹市 名產可以買 美食 推薦」），徹底修復跨回合地域型問答錯位的問題。
+
+7. **LLM 智慧搜尋問句改寫 (LLM-based Search Query Rewriting)**
+   - **優化前**：使用規則式與硬編碼的口語贅詞過濾清單（Fluff List）來清理搜尋問句，此方式無法擴展，極易因為千奇百怪的口語詞彙（如「今年的天氣如何」）而使搜尋引擎匹配到不相關的網頁（例如 Wikipedia 年平均氣候條目）。
+   - **優化後**：移除硬編碼的 Fluff List，改由 LLM（本地 Gemma 或雲端模型）智慧改寫為 5 字以內的純搜尋引擎關鍵字（如「天氣預報 氣溫」），並在 LLM 失敗時自動無縫降級回 legacy 規則式過濾，既保障了理解深度與準確度，又徹底免除了人工維護過濾詞庫的成本喵！
+
 ---
+
 
 ## 📄 License
 MIT License — 歡迎自由修改，用溫暖的科技與傲嬌的貓咪守護您和家人的生活。 💖🐱

@@ -83,11 +83,19 @@ def reset_database():
         print(f"❌ [Reset DB] Error resetting ChromaDB: {e}")
 
     # 4. Reset Personalization Settings (settings.json) to defaults
+    # NOTE: Preserve user location (user_city/district/lat/lon) so Mimo does not
+    # lose geolocation data after a chat/memory reset.
     try:
         import settings_manager
+        existing = settings_manager.load_settings()
         default_settings = settings_manager.DEFAULT_SETTINGS.copy()
+        # Carry over all location keys
+        for loc_key in ("user_city", "user_district", "city", "district",
+                        "user_latitude", "user_longitude"):
+            if loc_key in existing:
+                default_settings[loc_key] = existing[loc_key]
         settings_manager.save_settings(default_settings)
-        print("✅ [Reset DB] Personalization settings (settings.json) reset to default clean values.")
+        print("✅ [Reset DB] Personalization settings (settings.json) reset to default clean values (location preserved).")
     except Exception as e:
         print(f"❌ [Reset DB] Error resetting personalization settings: {e}")
 

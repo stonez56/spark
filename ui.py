@@ -229,8 +229,11 @@ async def set_location_manual_endpoint(payload: dict):
 async def set_location_autodetect_endpoint():
     loc = location_manager.auto_detect_ip()
     if loc:
-        location_manager.save_location(loc["city"], loc["district"], loc["latitude"], loc["longitude"])
-        return JSONResponse({"status": "ok", "city": loc["city"], "district": loc["district"]})
+        from brain import clean_traditional_chinese
+        city_t = clean_traditional_chinese(loc["city"])
+        district_t = clean_traditional_chinese(loc["district"])
+        location_manager.save_location(city_t, district_t, loc["latitude"], loc["longitude"])
+        return JSONResponse({"status": "ok", "city": city_t, "district": district_t})
     return JSONResponse({"status": "error", "message": "IP 定位失敗"}, status_code=500)
 
 @app.post("/api/reset-db")

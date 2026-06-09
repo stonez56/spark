@@ -56,7 +56,7 @@ def clean_traditional_chinese(text: str) -> str:
     return "".join(S2T_DICT.get(c, c) for c in text)
 
 
-def refine_search_query(query: str) -> str:
+def legacy_refine_search_query(query: str) -> str:
     """
     Refines conversational raw queries into clean, highly-targeted search engine keywords.
     Removes question particles, question words, and appends context keywords like '景點 推薦'.
@@ -66,31 +66,62 @@ def refine_search_query(query: str) -> str:
     # Check intent keywords
     is_travel = any(w in refined for w in ["好玩", "景點", "旅遊", "去處", "踏青", "打卡", "觀光", "推薦地方"])
     is_food = any(w in refined for w in ["美食", "好吃", "餐廳", "小吃", "名產", "伴手禮", "好吃的"])
-    is_weather = any(w in refined for w in ["天氣", "下雨", "溫度", "氣溫", "氣候"])
-    
+    is_weather = any(w in refined for w in ["天氣", "下雨", "溫度", "氣溫", "氣候", "降雨", "濕度"])
+    # Annual/climate queries (e.g. 今年的天氣 / 氣候怎麼樣) → must rewrite to current forecast
+    is_annual_climate = any(w in refined for w in ["今年", "年均", "年平均", "氣候", "年降雨", "全年"])
+
     # Remove punctuation
     refined = re.sub(r'[?？!！,，.。，、]', ' ', refined)
     
-    # Remove conversational fluff
+    # Remove conversational fluff (expanded)
     fluff = [
+        # Question words
         "是有什麼", "有什麼", "是什麼", "是甚麼", "有甚麼", "是什麼呢",
+        "如何", "怎麼樣", "怎樣", "怎麼", "如何呢", "怎樣呢",
+        # Temporal filler
+        "今天的", "今天", "今年的", "今年", "最近的", "最近",
+        # Place fluff
         "好玩的地方", "好玩的好去處", "好去處", "的地方", "推薦的",
-        "嗎", "呢", "啊", "啦", "吧", "喔", "呀", "請幫我", "幫我查詢", "幫我搜尋", "查詢", "搜尋"
+        # Particles
+        "嗎", "呢", "啊", "啦", "吧", "喔", "呀", "的",
+        # Action words
+        "請幫我", "幫我查詢", "幫我搜尋", "查詢", "搜尋"
     ]
     for f in fluff:
         refined = refined.replace(f, " ")
         
     refined = re.sub(r'\s+', ' ', refined).strip()
     
-    # Append contextually useful keywords
-    if is_travel and "景點" not in refined:
-        refined += " 景點 推薦"
-    elif is_food and "美食" not in refined:
-        refined += " 美食 推薦"
-    elif is_weather and "天氣" not in refined:
-        refined += " 天氣"
+    # Rewrite annual/climate queries into current weather forecast keywords
+    # e.g. "新竹市 天氣" (after stripping 今年) → "新竹市 天氣預報 氣溫 今天"
+    if is_annual_climate and is_weather:
+        # Strip any residual climate-only words and redirect to forecast
+        refined = re.sub(r'氣候', '天氣', refined)
+        if "預報" not in refined:
+            refined += " 天氣預報 氣溫 今天"
+    else:
+        # Append contextually useful keywords
+        if is_travel and "景點" not in refined:
+            refined += " 景點 推薦"
+        elif is_food and "美食" not in refined:
+            refined += " 美食 推薦"
+        elif is_weather and "天氣" not in refined:
+            refined += " 天氣"
         
     return refined
+
+
+def refine_search_query(query: str) -> str:
+    """
+    Global entry point that runs the LLM-based query refiner.
+    """
+    try:
+        brain = OllamaBrain()
+        return brain.refine_search_query(query)
+    except Exception as e:
+        print(f"Error in global refine_search_query: {e}. Falling back to legacy.")
+        return legacy_refine_search_query(query)
+
 
 
 def filter_degenerative_repetition(text: str) -> str:
@@ -447,6 +478,53 @@ class OllamaBrain:
             print(f"Translation error: {e}")
             return text
 
+    def refine_search_query(self, query: str) -> str:
+        """
+        Refines conversational raw queries into clean, highly-targeted search engine keywords using the LLM.
+        """
+        prompt = (
+            "你是一個搜尋引擎關鍵字改寫專家。\n"
+            "請將使用者口語化的輸入改寫成適合搜尋引擎（如 DuckDuckGo）的關鍵字（不超過 5 個詞，以空格分隔，純名詞/關鍵字，不要有問號或贅詞如「如何」、「怎樣」、「幫我」、「謝謝」、「今天」、「今年」、「的」）。\n"
+            "如果輸入本身就是簡短的關鍵字，直接輸出它。\n"
+            "絕對不要輸出除了關鍵字以外的任何解釋、標點符號或前言！\n\n"
+            "範例：\n"
+            "輸入：「今年的天氣如何」\n"
+            "輸出：「天氣預報 氣溫」\n\n"
+            "輸入：「新竹有什麼名產可以買啊」\n"
+            "輸出：「名產 伴手禮」\n\n"
+            "輸入：「台北有什麼推薦的景點嗎」\n"
+            "輸出：「台北 景點 推薦」\n\n"
+            "輸入：「捷運公車怎麼搭」\n"
+            "輸出：「捷運 公車 路線」\n\n"
+            "輸入：「你覺得今天天氣熱不熱」\n"
+            "輸出：「天氣 溫度」\n\n"
+            f"輸入：「{query}」\n"
+            "輸出："
+        )
+        try:
+            print(f"[{get_timestamp()}] [Brain Query Rewrite] Rewriting query '{query}' using LLM (mode: {self.mode})...")
+            if self.mode == "cloud":
+                res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low")
+            else:
+                res = self._local_generate(prompt, options={"num_predict": 30, "temperature": 0.1})
+            
+            # Clean up response
+            res = res.strip().replace("「", "").replace("」", "").replace("\"", "").replace("'", "")
+            if res.startswith("輸出："):
+                res = res[len("輸出："):].strip()
+            if res.startswith("輸出:"):
+                res = res[len("輸出:"):].strip()
+            
+            if not res or len(res) > 50:
+                print(f"[{get_timestamp()}] [Brain Query Rewrite] LLM returned invalid or empty query: '{res}'. Falling back to legacy refiner.")
+                return legacy_refine_search_query(query)
+                
+            print(f"[{get_timestamp()}] [Brain Query Rewrite] LLM output: '{res}'")
+            return res
+        except Exception as e:
+            print(f"[{get_timestamp()}] [Brain Query Rewrite] LLM rewrite failed: {e}. Falling back to legacy refiner.")
+            return legacy_refine_search_query(query)
+
     def search_web(self, query: str) -> str:
         """Searches the web using DuckDuckGo and summarises the results with a strict content safety filter."""
         print(f"Searching web for: {query}")
@@ -462,18 +540,25 @@ class OllamaBrain:
             return "喵嗚～主人！本喵是一隻純潔的高貴貓咪，不幫忙查詢任何奇怪或兒童不宜的敏感內容喵！哼！"
 
         # Refine the search query to improve retrieval quality
-        search_target = refine_search_query(query)
+        search_target = self.refine_search_query(query)
         print(f"[Brain Search Web] Refined query: '{query}' -> '{search_target}'")
 
         # 3. 在地化搜尋詞自動補全：結合對話話題定位或本地物理定位
         try:
             import location_manager
+            import settings_manager as _sm
             loc = location_manager.get_location()
             city = loc.get("city", "")
             district = loc.get("district", "")
-            
+            # Fallback: if user_city key is blank, read legacy city/district keys directly
+            if not city:
+                _s = _sm.load_settings()
+                city = _s.get("city", "")
+                district = _s.get("district", "")
+
             taiwan_cities = ["台北", "新北", "基隆", "桃園", "新竹", "苗栗", "台中", "彰化", "南投", "雲林", "嘉義", "台南", "高雄", "屏東", "宜蘭", "花蓮", "台東", "澎湖", "金門", "馬祖"]
             active_city = city
+
             
             # 從對話歷史偵測當前討論的縣市話題
             try:
@@ -481,10 +566,14 @@ class OllamaBrain:
                 memory = MimoMemory()
                 history = memory.get_recent_history(limit=2)
                 for user_input, spark_response in history:
+                    found = False
                     for tc in taiwan_cities:
                         if tc in user_input or tc in spark_response:
                             active_city = tc + ("縣" if tc in ["苗栗", "南投", "雲林", "嘉義", "屏東", "宜蘭", "花蓮", "台東", "澎湖", "彰化"] else "市")
+                            found = True
                             break
+                    if found:
+                        break
             except Exception as ex:
                 print(f"Error scanning history for active city: {ex}")
                 
@@ -493,7 +582,7 @@ class OllamaBrain:
                 location_prefix = f"{city}{district}"
                 
             if location_prefix:
-                sensitive_terms = ["天氣", "下雨", "氣溫", "氣候", "溫度", "圓山", "美食", "景點", "公車", "捷運", "醫院", "藥局", "附近", "餐廳"]
+                sensitive_terms = ["天氣", "下雨", "氣溫", "氣候", "溫度", "圓山", "美食", "景點", "公車", "捷運", "醫院", "藥局", "附近", "餐廳", "風景", "好玩", "去處", "踏青", "打卡", "觀光", "旅遊", "爬山", "出遊", "散步", "好去處", "名產", "禮物", "伴手禮", "特產", "名物"]
                 is_neutral_query = not any(tc in search_target for tc in taiwan_cities)
                 needs_augmentation = any(term in search_target for term in sensitive_terms) or (active_city != city)
                 
@@ -530,8 +619,9 @@ class OllamaBrain:
             try:
                 from memory import MimoMemory
                 memory = MimoMemory()
-                search_texts = [r.get('title', '') + " " + r.get('body', '') for r in filtered_results]
-                memory.save_context_keywords(search_texts)
+                # 僅提取標題中的關鍵字，避免內文廣告、政治或雜訊干擾
+                search_titles = [r.get('title', '') for r in filtered_results]
+                memory.save_context_keywords(search_titles)
             except Exception as ex:
                 print(f"Error saving search results to STT cache: {ex}")
                 
@@ -837,3 +927,75 @@ class OllamaBrain:
         except Exception as e:
             print(f"Error generating response: {e}")
             return "I'm having trouble thinking right now."
+
+    def parse_reminder_data(self, user_input: str) -> dict:
+        """
+        Parses reminder event details and time from user natural language input.
+        Returns a dict: {"message": str, "time": "HH:MM", "needs_clarification": bool, "clarification_type": str}
+        """
+        from datetime import datetime
+        now = datetime.now()
+        weekday_map = ["日", "一", "二", "三", "四", "五", "六"]
+        current_time_str = now.strftime(f"%Y-%m-%d %H:%M:%S (星期{weekday_map[int(now.strftime('%w'))]})")
+        
+        system_prompt = f"""你是一個精準的時間與事件語意提取助手。請分析使用者的輸入，並將其轉化為嚴格的 JSON 格式回傳。
+當前系統時間是：{current_time_str}。
+
+提取規則：
+1. "message": 提取使用者想要被提醒的事件或任務（例如：「吃藥」、「買牛奶」、「喝水」、「起床」、「買雞蛋」、「開會」、「買衛生紙」）。如果只有時間沒有事件（如在第二輪追問下回答時間），則此欄位設為 null。
+2. "time": 將語音提及的時間轉換為精確的 24 小時制 "HH:MM" 格式（例如：「4.50分」依當前時間下午判定為 "16:50"；「下午三點半」為 "15:30"；「明早八點」為 "08:00"）。如果沒有提供明確的可觸發時間，則填入 null。
+3. "start_date": 根據當前系統時間與使用者提及的相對日期（如「今天」、「明天」、「後天」或特定日期），計算並轉化為 "YYYY-MM-DD" 格式。若未提及日期但有明確時間點，默認推算為當天日期。如果連時間都沒有提到，則填入 null。
+4. "needs_clarification": 布林值 (true 或 false)。如果時間 ("time") 為 null，且使用者沒有提及任何具體的可觸發時間，則設為 true。否則設為 false。
+5. "clarification_type": 如果 needs_clarification 為 true，則設為 "time_or_location"。否則設為 null。
+
+範例：
+- "提醒我一下,4.50分我要吃藥" -> {{"message": "吃藥", "time": "16:50", "start_date": "2026-05-31", "needs_clarification": false, "clarification_type": null}}
+- "幫我記一下買雞蛋" -> {{"message": "買雞蛋", "time": null, "start_date": null, "needs_clarification": true, "clarification_type": "time_or_location"}}
+- "在家裡,明天早上7點" -> {{"message": null, "time": "07:00", "start_date": "2026-06-01", "needs_clarification": false, "clarification_type": null}}
+
+回覆規範：請「只」輸出 JSON 字串，不要包含 any 額外解釋或 Markdown 標記。"""
+
+        print(f"[{get_timestamp()}] [Brain parse_reminder_data] parsing input: {user_input}")
+        
+        default_res = {
+            "message": user_input,
+            "time": None,
+            "start_date": None,
+            "needs_clarification": True,
+            "clarification_type": "time_or_location"
+        }
+        
+        res = ""
+        try:
+            if self.mode == "cloud":
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ]
+                res = self._cloud_chat(messages, reasoning_effort="low")
+            else:
+                full_prompt = f"{system_prompt}\n\nUser Input: {user_input}"
+                res = self._local_generate(
+                    full_prompt,
+                    options={"temperature": 0.0, "num_predict": 128}
+                )
+            
+            # Safe JSON extraction from LLM response
+            cleaned_res = res.strip()
+            if "```json" in cleaned_res:
+                cleaned_res = cleaned_res.split("```json")[1].split("```")[0].strip()
+            elif "```" in cleaned_res:
+                cleaned_res = cleaned_res.split("```")[1].split("```")[0].strip()
+            
+            # Regex to find first complete bracket structure
+            import re
+            match = re.search(r'\{.*?\}', cleaned_res, re.DOTALL)
+            if match:
+                cleaned_res = match.group(0)
+            
+            parsed = json.loads(cleaned_res)
+            print(f"[{get_timestamp()}] [Brain parse_reminder_data] successfully parsed: {parsed}")
+            return parsed
+        except Exception as e:
+            print(f"⚠️ [Brain parse_reminder_data] Failed to parse reminder data: {e}. Raw response: {res!r}")
+            return default_res

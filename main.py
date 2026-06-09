@@ -175,6 +175,27 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
     print("Loading AI Models...")
     
     try:
+        # Location Auto-Detection on first boot/warmup
+        try:
+            import location_manager
+            loc = location_manager.get_location()
+            if not loc.get("city"):
+                print("[Location Setup] No cached location found in settings.json. Running IP geolocation...")
+                sm.loading_text = "Detecting Location..."
+                detected = location_manager.auto_detect_ip()
+                if detected:
+                    from brain import clean_traditional_chinese
+                    city_t = clean_traditional_chinese(detected["city"])
+                    district_t = clean_traditional_chinese(detected["district"])
+                    location_manager.save_location(
+                        city_t,
+                        district_t,
+                        detected["latitude"],
+                        detected["longitude"]
+                    )
+        except Exception as loc_e:
+            print(f"[Location Setup] Error auto-detecting location: {loc_e}")
+
         sm.loading_text = "Loading WakeWord..."
         import openwakeword
         from openwakeword.model import Model
@@ -576,7 +597,6 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                                 augmented_prompt += f"\n{intent_hint}"
                                 
                             response = brain.generate_response(augmented_prompt, context)
-                            memory.add_interaction(transcription, response)
                         elif action == "emergency":
                             import settings_manager
                             patient_name = settings_manager.load_settings().get("patient_name", "主人")
@@ -661,6 +681,9 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                                     response = f"喵嗚？本喵沒有聽懂時間耶。請再說一次幾點提醒你「{pending_reminder['message']}」好嗎？喵～"
                         else:
                             response = "我不太確定該怎麼做，您可以再說一次嗎？"
+
+                        if response and response != "...":
+                            memory.add_interaction(transcription, response)
 
                         print(f"[{get_timestamp()}] 💬 Mimo says  : {response}")
                         print(f"[{get_timestamp()}] ── TTS START ─────────────────────────")

@@ -33,9 +33,27 @@ INTENT_SYSTEM_PROMPT = """你是一個精準的意圖辨識助手。請分析使
 # Web Search Response Prompt
 # ==============================================================================
 def get_search_web_prompt(query: str, lang_rule: str, search_context: str) -> str:
+    # 天氣查詢：強制要求輸出具體數字資料
+    weather_keywords = ["天氣", "下雨", "氣溫", "溫度", "濕度", "降雨", "紫外線", "風速",
+                        "weather", "rain", "temperature", "humidity", "forecast"]
+    is_weather_query = any(kw in query.lower() for kw in weather_keywords)
+
+    if is_weather_query:
+        weather_rule = (
+            "【天氣查詢強制規則】這是一則天氣查詢，你必須從搜尋結果中擷取並明確說出以下資料（若搜尋結果有提供）：\n"
+            "1. 今日天氣概況（晴天 / 多雲 / 陰天 / 下雨）\n"
+            "2. 氣溫（幾度到幾度，例如：18°C 到 23°C）\n"
+            "3. 降雨機率（例如：30%）或是否需要帶傘\n"
+            "4. 濕度或體感（若有）\n"
+            "你不可以只說『天氣不好』或泛泛帶過！必須引用搜尋結果中的實際數字。若搜尋結果完全沒有數字，請明確說明『目前無法取得精確數據』，但不可憑空捏造。\n"
+        )
+    else:
+        weather_rule = ""
+
     return (
         f"你現在是一隻傲嬌卻純潔、關心主人且博學的陪伴貓咪助手。請根據以下過濾後的網頁搜尋結果，用傲嬌貓咪的口吻回答主人的問題：'{query}'。\n"
         f"【安全紅線】絕對禁止提及、暗示、描述或導向任何色情、不雅、暴力或限制級的網站或內容！如果發現搜尋結果中含有任何不適宜的擦邊球內容，請立刻忽略並以健康、正面、傲嬌的態度回答。\n"
+        f"{weather_rule}"
         f"【長度限制】回答字數控制在 100 到 150 字之間，以便提供具體且有價值的內容！精簡、口語化，不要使用 Markdown 符號或清單。{lang_rule}\n\n"
         f"結果來源：\n{search_context}"
     )
