@@ -645,7 +645,7 @@ class OllamaBrain:
         try:
             from ddgs import DDGS
             with DDGS() as ddgs:
-                results = list(ddgs.text(search_target, region='tw-tz', max_results=5))
+                results = list(ddgs.text(search_target, region='tw-zh', max_results=5))
 
             if not results:
                 return "我無法在網路上找到相關資訊。"
