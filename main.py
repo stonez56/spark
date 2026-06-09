@@ -32,6 +32,7 @@ from tts import SparkTTS
 from config import LLM_MODE, LOCAL_TEXT_MODEL, CLOUD_TEXT_MODEL, WAKE_WORD
 from oled_controller import OLEDController
 from camera_controller import CameraController
+import prompts
 
 def get_timestamp() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
@@ -39,71 +40,14 @@ def get_timestamp() -> str:
 def format_reminder_confirmation(message: str, trigger_time: str, start_date: str = None) -> str:
     """
     Format a beautiful, natural, and accurate Traditional Chinese confirmation message.
-    Avoids embarrassing hardcoded '今天下午 07:00' when the user said morning or a different day.
     """
-    # 1. Parse time period (早上/上午/中午/下午/晚上/半夜)
-    try:
-        hour = int(trigger_time.split(":")[0])
-        minute = int(trigger_time.split(":")[1])
-    except Exception:
-        hour = 12
-        minute = 0
-        
-    if 0 <= hour < 5:
-        period = "半夜"
-    elif 5 <= hour < 11:
-        period = "早上"
-    elif 11 <= hour < 13:
-        period = "中午"
-    elif 13 <= hour < 18:
-        period = "下午"
-    else:
-        period = "晚上"
-        
-    # Format hour to 12-hour clock for natural speech
-    display_hour = hour if hour <= 12 else hour - 12
-    if hour == 0:
-        display_hour = 12
-        
-    if minute == 0:
-        time_display = f"{period}{display_hour}點"
-    else:
-        time_display = f"{period}{display_hour}點{minute}分"
-
-    # 2. Parse date period (今天/明天/後天/特定日期)
-    date_display = "今天"
-    if start_date:
-        import datetime as dt
-        try:
-            today = dt.date.today()
-            target_date = dt.datetime.strptime(start_date, "%Y-%m-%d").date()
-            delta = (target_date - today).days
-            if delta == 0:
-                date_display = "今天"
-            elif delta == 1:
-                date_display = "明天"
-            elif delta == 2:
-                date_display = "後天"
-            else:
-                date_display = f"{target_date.month}月{target_date.day}號"
-        except Exception as e:
-            print(f"Error parsing date delta: {e}")
-            date_display = "今天"
-
-    return f"記下來了！會在{date_display}{time_display}提醒你「{message}」喵！"
+    return prompts.format_reminder_confirmation(message, trigger_time, start_date)
 
 def format_reminder_trigger_sentence(message: str) -> str:
     """
-    Generate a beautiful, tsundere cat character reminder sentence for the scheduler trigger.
+    Generate a beautiful reminder sentence for the scheduler trigger based on active personality.
     """
-    import random
-    templates = [
-        f"喂！時間到啦！本喵特地來提醒你「{message}」喵！可別忘了！",
-        f"喵嗚～說好了現在要提醒你「{message}」的，本喵說到做到，快去吧！",
-        f"哼，本喵才不是特地關心你呢，只是時間到了，提醒你該去「{message}」了喵！",
-        f"時間到了喔！本喵大發慈悲提醒你該去「{message}」了喵～"
-    ]
-    return random.choice(templates)
+    return prompts.format_reminder_trigger_sentence(message)
 
 def get_js_weekday(date_str: str) -> str:
     """

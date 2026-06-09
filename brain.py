@@ -199,6 +199,7 @@ class OllamaBrain:
         # Load active mode from settings.json, falling back to LLM_MODE from config.py
         self.mode = settings.get("dialogue_mode", LLM_MODE)
         self.routing_mode = settings.get("routing_mode", "local")
+        self.personality = settings.get("personality", "proud")
         
         # ── Daily API call counter ──
         self._call_date = date.today()
@@ -295,6 +296,7 @@ class OllamaBrain:
         self.mode = settings.get("dialogue_mode", LLM_MODE)
         self.routing_mode = settings.get("routing_mode", "local")
         self.search_rewrite_mode = settings.get("search_rewrite_mode", "legacy")
+        self.personality = settings.get("personality", "proud")
         
         # Reload text and vision models
         if self.mode == "cloud":
@@ -621,7 +623,8 @@ class OllamaBrain:
                 if cwa_data:
                     weather_summary = weather_mod.format_weather_for_llm(cwa_data)
                     print(f"[Brain Weather] CWA data OK:\n{weather_summary}")
-                    prompt = prompts.get_weather_prompt(query, cwa_data["city"], weather_summary)
+                    personality = _sm.load_settings().get("personality", "proud")
+                    prompt = prompts.get_weather_prompt(query, cwa_data["city"], weather_summary, personality=personality)
                     if self.mode == "cloud":
                         res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low", stream=stream)
                     else:
@@ -776,7 +779,9 @@ class OllamaBrain:
                 if lang == 'zh' else
                 "Respond in English."
             )
-            prompt = prompts.get_search_web_prompt(query, lang_rule, search_context)
+            import settings_manager as _sm
+            personality = _sm.load_settings().get("personality", "proud")
+            prompt = prompts.get_search_web_prompt(query, lang_rule, search_context, personality=personality)
             if self.mode == "cloud":
                 res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high", stream=stream)
             else:
@@ -1010,13 +1015,20 @@ class OllamaBrain:
             roc_year = target_date.year - 1911
             weekday_str = ["一", "二", "三", "四", "五", "六", "日"][target_date.weekday()]
             
+            personality = settings.get("personality", "proud")
+            templates = prompts.PERSONALITY_DATETIME_RESPONSES.get(personality, prompts.PERSONALITY_DATETIME_RESPONSES["proud"])
+            
             print(f"[{get_timestamp()}] [Fast Datetime Interceptor] Intercepted query '{prompt}' - returning locally in 0ms...")
             if "幾點" in normalized_prompt or "時間" in normalized_prompt:
-                return f"{patient_name}，現在時間是 {now.strftime('%H 點 %M 分')} 喵～ 哼，{patient_name}問時間是想放罐罐了嗎？"
+                time_str = now.strftime('%H 點 %M 分')
+                template = templates["time"]
+                return template.format(patient_name=patient_name, time_str=time_str)
             elif "星期" in normalized_prompt or "禮拜" in normalized_prompt:
-                return f"{date_prefix}是星期 {weekday_str} 喵～ {patient_name} 別忘了要乖乖陪本喵喔！"
+                template = templates["weekday"]
+                return template.format(date_prefix=date_prefix, weekday_str=weekday_str, patient_name=patient_name)
             else:
-                return f"{date_prefix}是中華民國 {roc_year} 年 {target_date.month} 月 {target_date.day} 日喵～ 哼，{patient_name}記住了嗎？"
+                template = templates["date"]
+                return template.format(date_prefix=date_prefix, roc_year=roc_year, month=target_date.month, day=target_date.day, patient_name=patient_name)
 
         lang = self._detect_language(prompt)
         if lang == 'zh':
@@ -1033,10 +1045,11 @@ class OllamaBrain:
         is_knowledge_query = any(kw in prompt.lower() for kw in ["什麼是", "解釋", "介紹", "如何", "怎麼", "為何", "為什麼", "說明", "llm", "ai", "gpt", "科技", "科普"])
         
         # ── 3. 全面家庭安全防護紅線與拒答禁忌領域 (Comprehensive Family Safety Guardrails) ──
+        personality = settings.get("personality", "proud")
         if is_knowledge_query:
-            system_content = prompts.get_knowledge_system_prompt(caregiver_name, patient_name, time_context, lang_instruction)
+            system_content = prompts.get_knowledge_system_prompt(caregiver_name, patient_name, time_context, lang_instruction, personality=personality)
         else:
-            system_content = prompts.get_normal_system_prompt(caregiver_name, patient_name, time_context, lang_instruction)
+            system_content = prompts.get_normal_system_prompt(caregiver_name, patient_name, time_context, lang_instruction, personality=personality)
 
         print(f"[{get_timestamp()}] Sending to LLM ({self.mode}): {prompt}")
         try:

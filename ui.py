@@ -222,6 +222,13 @@ async def update_settings(payload: dict):
             if hasattr(app.state, 'mode_queue'):
                 app.state.mode_queue.put({"type": "settings_update"})
         
+    if "personality" in payload:
+        new_personality = payload["personality"]
+        if new_personality != settings.get("personality"):
+            settings["personality"] = new_personality
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put({"type": "settings_update"})
+        
     settings_manager.save_settings(settings)
     
     if need_regenerate and hasattr(app.state, 'command_queue'):

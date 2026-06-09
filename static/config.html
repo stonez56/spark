@@ -591,6 +591,17 @@
                     </div>
 
                     <div class="form-group">
+                        <label for="mimo-personality">🐱 貓咪個性設定 (Personality Mode)</label>
+                        <select id="mimo-personality" onchange="saveSettings()">
+                            <option value="proud">🐱 驕傲自信 (Proud)</option>
+                            <option value="gentle">❤️ 細心呵護 (Gentle)</option>
+                            <option value="respectful">🫡 尊敬服從 (Respectful)</option>
+                            <option value="adoring">✨ 崇拜仰慕 (Adoring)</option>
+                            <option value="playful">🤪 淘氣愛玩 (Playful)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
                         <label>🗣️ 語速斷句自適應設定 (Speech Speed VAD)</label>
                         <select id="speaking-speed">
                             <option value="fast">⚡ 快速語者 (1.2 秒靜音自動斷句)</option>
@@ -813,6 +824,7 @@
             const useReasoning = document.getElementById('cloud-use-reasoning').checked;
             const rewriteMode = document.getElementById('search-rewrite-mode').value;
             const sttModelSize = document.getElementById('stt-model-size').value;
+            const personality = document.getElementById('mimo-personality').value;
             const dialogueMode = getDialogueMode();
             
             await fetch('/api/settings', {
@@ -828,7 +840,8 @@
                     cloud_text_model: cloudModel,
                     cloud_use_reasoning: useReasoning,
                     search_rewrite_mode: rewriteMode,
-                    stt_model_size: sttModelSize
+                    stt_model_size: sttModelSize,
+                    personality: personality
                 })
             });
         } catch(e) { console.error(e); }
@@ -852,6 +865,9 @@
             if (data.stt_model_size) {
                 document.getElementById('stt-model-size').value = data.stt_model_size;
             }
+            if (data.personality) {
+                document.getElementById('mimo-personality').value = data.personality;
+            }
             updateModeButtons(data.dialogue_mode || 'local');
             updateRoutingModeButtons(data.routing_mode || 'local');
         } catch(e) { console.error(e); }
@@ -865,6 +881,7 @@
         const useReasoning = document.getElementById('cloud-use-reasoning').checked;
         const rewriteMode = document.getElementById('search-rewrite-mode').value;
         const sttModelSize = document.getElementById('stt-model-size').value;
+        const personality = document.getElementById('mimo-personality').value;
         const dialogueMode = getDialogueMode();
         
         const btn = document.getElementById('save-settings-btn');
@@ -892,7 +909,8 @@
                     cloud_text_model: cloudModel,
                     cloud_use_reasoning: useReasoning,
                     search_rewrite_mode: rewriteMode,
-                    stt_model_size: sttModelSize
+                    stt_model_size: sttModelSize,
+                    personality: personality
                 })
             });
             await new Promise(r => setTimeout(r, 5000));
