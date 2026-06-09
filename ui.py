@@ -214,6 +214,13 @@ async def update_settings(payload: dict):
             settings["search_rewrite_mode"] = new_rewrite_mode
             if hasattr(app.state, 'mode_queue'):
                 app.state.mode_queue.put({"type": "settings_update"})
+
+    if "stt_model_size" in payload:
+        new_stt_model_size = payload["stt_model_size"]
+        if new_stt_model_size != settings.get("stt_model_size"):
+            settings["stt_model_size"] = new_stt_model_size
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put({"type": "settings_update"})
         
     settings_manager.save_settings(settings)
     

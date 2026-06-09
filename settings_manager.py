@@ -23,7 +23,8 @@ DEFAULT_SETTINGS = {
     "offload_local_llm": True,
     "cloud_text_model": "openai/gpt-oss-120b:free",
     "cloud_use_reasoning": False,
-    "search_rewrite_mode": "legacy"
+    "search_rewrite_mode": "legacy",
+    "stt_model_size": "small"
 }
 
 def load_settings():

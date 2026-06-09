@@ -289,6 +289,15 @@
                 <option value="slow">🐢 慢速語者 (2.5 秒靜音自動斷句)</option>
             </select>
         </div>
+        <div class="form-group" style="margin-top: 15px;">
+            <label for="stt-model-size" style="font-size: 14px; color: #aaa;">🎙️ 語音辨識模型大小 (STT Model Size)</label>
+            <select id="stt-model-size" onchange="saveSettings()" style="width:100%; padding:10px; background:#1c1c24; border:1px solid rgba(255,255,255,0.15); color:#fff; border-radius:6px; font-size:14px; font-family:'Inter'; outline:none; transition: border-color 0.2s;">
+                <option value="tiny">⚡ Tiny 迷你模型 (速度極快，準確度低，約 75MB)</option>
+                <option value="base" selected>😊 Base 基礎模型 (速度快，準確度中等，約 145MB)</option>
+                <option value="small">🔥 Small 進階模型 (速度中等，準確度高，約 460MB - 推薦使用！)</option>
+                <option value="medium">🧠 Medium 大型模型 (速度慢，準確度極高，約 1.5GB)</option>
+            </select>
+        </div>
         <div class="form-group" style="flex-direction: row; align-items: center; gap: 8px; margin-top: 10px; margin-bottom: 15px;">
             <input type="checkbox" id="offload-local-llm" style="width: 18px; height: 18px; cursor: pointer; accent-color: #00ffff;">
             <label for="offload-local-llm" style="cursor: pointer; font-size: 14px; color: #ddd; user-select: none;">☁️ 雲端模式下主動釋放本地 Ollama 資源 (節省 Pi 5 算力與記憶體)</label>
@@ -410,6 +419,7 @@
             const cloudModel = document.getElementById('cloud-model').value;
             const useReasoning = document.getElementById('cloud-use-reasoning').checked;
             const rewriteMode = document.getElementById('search-rewrite-mode').value;
+            const sttModelSize = document.getElementById('stt-model-size').value;
             const dialogueMode = getDialogueMode();
             
             await fetch('/api/settings', {
@@ -424,7 +434,8 @@
                     offload_local_llm: offload,
                     cloud_text_model: cloudModel,
                     cloud_use_reasoning: useReasoning,
-                    search_rewrite_mode: rewriteMode
+                    search_rewrite_mode: rewriteMode,
+                    stt_model_size: sttModelSize
                 })
             });
         } catch(e) { console.error(e); }
@@ -445,6 +456,9 @@
             if (data.search_rewrite_mode) {
                 document.getElementById('search-rewrite-mode').value = data.search_rewrite_mode;
             }
+            if (data.stt_model_size) {
+                document.getElementById('stt-model-size').value = data.stt_model_size;
+            }
             updateModeButtons(data.dialogue_mode || 'local');
             updateRoutingModeButtons(data.routing_mode || 'local');
         } catch(e) { console.error(e); }
@@ -457,6 +471,7 @@
         const cloudModel = document.getElementById('cloud-model').value;
         const useReasoning = document.getElementById('cloud-use-reasoning').checked;
         const rewriteMode = document.getElementById('search-rewrite-mode').value;
+        const sttModelSize = document.getElementById('stt-model-size').value;
         const dialogueMode = getDialogueMode();
         
         const btn = document.getElementById('save-settings-btn');
@@ -483,7 +498,8 @@
                     offload_local_llm: offload,
                     cloud_text_model: cloudModel,
                     cloud_use_reasoning: useReasoning,
-                    search_rewrite_mode: rewriteMode
+                    search_rewrite_mode: rewriteMode,
+                    stt_model_size: sttModelSize
                 })
             });
             await new Promise(r => setTimeout(r, 5000));

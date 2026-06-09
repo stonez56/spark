@@ -43,7 +43,8 @@ class TestSparkSTT(unittest.TestCase):
         
         self.assertIsInstance(called_audio, np.ndarray)
         self.assertEqual(called_audio.dtype, np.float32)
-        self.assertEqual(called_kwargs.get("beam_size"), 3)
+        self.assertEqual(called_kwargs.get("beam_size"), 5)
+        self.assertEqual(called_kwargs.get("language"), "zh")
 
 if __name__ == "__main__":
     unittest.main()

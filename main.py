@@ -288,7 +288,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
             oww_model = Model(wakeword_model_paths=paths) if paths else Model()
 
         sm.loading_text = "Loading STT..."
-        stt = SparkSTT(model_size="base")
+        stt = SparkSTT()
         
         sm.loading_text = "Loading LLM..."
         brain = OllamaBrain()
@@ -333,6 +333,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
             if isinstance(item, dict):
                 if item.get("type") == "settings_update":
                     brain.reload_settings()
+                    stt.reload_settings()
                     _report_mode(state_queue, brain)
             else:
                 new_mode = item

@@ -11,7 +11,8 @@ from config import (
     LLM_MODE,
     LOCAL_TEXT_MODEL, LOCAL_VISION_MODEL,
     OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
-    CLOUD_TEXT_MODEL, CLOUD_VISION_MODEL
+    CLOUD_TEXT_MODEL, CLOUD_VISION_MODEL,
+    BRAVE_API_KEY
 )
 # A lightweight, ultra-fast post-processing guardrail for common Simplified Chinese characters
 S2T_DICT = {
@@ -697,9 +698,50 @@ class OllamaBrain:
             print(f"Error augmenting search query with location: {e}")
 
         try:
-            from ddgs import DDGS
-            with DDGS() as ddgs:
-                results = list(ddgs.text(search_target, region='tw-zh', max_results=5))
+            results = []
+            if BRAVE_API_KEY:
+                try:
+                    import requests
+                    headers = {
+                        "X-Subscription-Token": BRAVE_API_KEY,
+                        "Accept": "application/json"
+                    }
+                    params = {
+                        "q": search_target,
+                        "country": "tw",
+                        "count": 5
+                    }
+                    print(f"[Brain Search Web] Querying Brave Search API for target: '{search_target}'...")
+                    resp = requests.get("https://api.search.brave.com/res/v1/web/search", headers=headers, params=params, timeout=8)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        web_results = data.get("web", {}).get("results", [])
+                        for item in web_results:
+                            results.append({
+                                "title": item.get("title", ""),
+                                "body": item.get("description", ""),
+                                "url": item.get("url", "")
+                            })
+                        print(f"[Brain Search Web] Brave Search API succeeded, found {len(results)} results.")
+                    else:
+                        print(f"[Brain Search Web] Brave Search API failed with status {resp.status_code}: {resp.text}. Falling back to DDG.")
+                except Exception as be:
+                    print(f"[Brain Search Web] Brave Search API exception: {be}. Falling back to DDG.")
+
+            if not results:
+                try:
+                    from ddgs import DDGS
+                    print(f"[Brain Search Web] Querying DuckDuckGo for target: '{search_target}'...")
+                    with DDGS() as ddgs:
+                        ddg_results = list(ddgs.text(search_target, region='tw-zh', max_results=5))
+                        for r in ddg_results:
+                            results.append({
+                                "title": r.get("title", ""),
+                                "body": r.get("body", ""),
+                                "url": r.get("url", "")
+                            })
+                except Exception as de:
+                    print(f"[Brain Search Web] DuckDuckGo search failed: {de}")
 
             if not results:
                 return "我無法在網路上找到相關資訊。"

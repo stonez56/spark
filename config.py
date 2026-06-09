@@ -49,6 +49,7 @@ GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 # 免費申請：https://opendata.cwa.gov.tw/user/authkey
 # 不設定時自動使用公開示範金鑰（限流較嚴）
 CWA_API_KEY = os.getenv("CWA_API_KEY", "")
+BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
 
 # ── Cloud TEXT & VISION models (using OpenRouter API) ──────────────────
 CLOUD_TEXT_MODEL   = "openai/gpt-oss-120b:free"

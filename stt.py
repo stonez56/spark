@@ -3,10 +3,54 @@ from faster_whisper import WhisperModel
 import prompts
 
 class SparkSTT:
-    def __init__(self, model_size="base"):
+    def __init__(self, model_size=None):
+        if not model_size:
+            try:
+                import settings_manager
+                model_size = settings_manager.load_settings().get("stt_model_size", "small")
+            except Exception:
+                model_size = "small"
+        self.model_size = model_size
+        self.model = self._load_model(self.model_size)
+
+    def _load_model(self, model_size):
+        import os
         print(f"Loading faster-whisper model '{model_size}'...")
-        # compute_type="int8" is good for speed/memory on CPU
-        self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        try:
+            return WhisperModel(model_size, device="cpu", compute_type="int8")
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "offline" in err_msg or "traffic has been disabled" in err_msg or "cached snapshot" in err_msg:
+                print(f"[STT] Model '{model_size}' not found in cache. Temporarily enabling internet to download model...")
+                old_hf = os.environ.get("HF_HUB_OFFLINE")
+                old_trans = os.environ.get("TRANSFORMERS_OFFLINE")
+                os.environ["HF_HUB_OFFLINE"] = "0"
+                os.environ["TRANSFORMERS_OFFLINE"] = "0"
+                try:
+                    return WhisperModel(model_size, device="cpu", compute_type="int8")
+                finally:
+                    if old_hf is not None:
+                        os.environ["HF_HUB_OFFLINE"] = old_hf
+                    else:
+                        os.environ.pop("HF_HUB_OFFLINE", None)
+                    if old_trans is not None:
+                        os.environ["TRANSFORMERS_OFFLINE"] = old_trans
+                    else:
+                        os.environ.pop("TRANSFORMERS_OFFLINE", None)
+            else:
+                raise e
+
+    def reload_settings(self):
+        try:
+            import settings_manager
+            current_model_size = settings_manager.load_settings().get("stt_model_size", "small")
+            if hasattr(self, "model_size") and self.model_size != current_model_size:
+                print(f"[STT] Model size changed from {self.model_size} to {current_model_size}. Reloading faster-whisper model...")
+                self.model_size = current_model_size
+                self.model = self._load_model(current_model_size)
+                print(f"[STT] Model reloaded successfully.")
+        except Exception as e:
+            print(f"Error reloading STT settings: {e}")
 
     def get_dynamic_prompt(self, chat_history=None):
         base_prompt = prompts.STT_BASE_PROMPT
@@ -86,7 +130,8 @@ class SparkSTT:
         
         segments, info = self.model.transcribe(
             audio_float32, 
-            beam_size=3,
+            beam_size=5,
+            language="zh",
             vad_filter=True,
             vad_parameters=dict(min_silence_duration_ms=500),
             initial_prompt=dynamic_prompt
