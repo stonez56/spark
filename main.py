@@ -114,7 +114,7 @@ def play_voice_stream(tts, response, tts_queue, stop_audio_flag):
             time.sleep(0.05)
 
 import queue as py_queue
-def stream_llm_and_play(llm_generator, tts, tts_queue, stop_audio_flag, transcript_queue, transcription):
+def stream_llm_and_play(llm_generator, tts, tts_queue, stop_audio_flag, transcript_queue, transcription, sm=None, state_queue=None):
     stop_audio_flag.clear()
     tts_queue.put(b'\x02')  # stop audio on frontend
     time.sleep(0.15)
@@ -154,6 +154,7 @@ def stream_llm_and_play(llm_generator, tts, tts_queue, stop_audio_flag, transcri
     
     first_chunk_sent_at = None
     total_bytes = 0
+    has_transitioned = False
     
     while True:
         try:
@@ -161,6 +162,12 @@ def stream_llm_and_play(llm_generator, tts, tts_queue, stop_audio_flag, transcri
             if sentence is None:
                 break
             
+            if not has_transitioned and sm is not None and state_queue is not None:
+                sm.transition(SparkState.SPEAKING)
+                state_queue.put(SparkState.SPEAKING)
+                has_transitioned = True
+                print(f"[{get_timestamp()}] 🔊 Speaking (Streaming)")
+
             print(f"[{get_timestamp()}] [Streaming TTS] Synthesizing: '{sentence}'")
             for audio_chunk in tts.synthesize_stream(sentence):
                 if stop_audio_flag.is_set():
@@ -711,16 +718,18 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
 
                         print(f"[{get_timestamp()}] ── TTS START ─────────────────────────")
 
-                        # ── Dispatch to UI: Send Speaking state FIRST so frontend sets mimoSpeakTimeStr,
-                        # then send transcript so updateTranscript() uses the correct Mimo timestamp.
-                        sm.transition(SparkState.SPEAKING)
-                        state_queue.put(SparkState.SPEAKING)
-                        print(f"[{get_timestamp()}] 🔊 Speaking ({brain.mode.upper()} | {brain.text_model})")
-
                         import types
                         if isinstance(response, types.GeneratorType):
-                            final_response_text = stream_llm_and_play(response, tts, tts_queue, stop_audio_flag, transcript_queue, transcription)
+                            final_response_text = stream_llm_and_play(
+                                response, tts, tts_queue, stop_audio_flag, transcript_queue, transcription,
+                                sm=sm, state_queue=state_queue
+                            )
                         else:
+                            # ── Dispatch to UI: Send Speaking state FIRST so frontend sets mimoSpeakTimeStr,
+                            # then send transcript so updateTranscript() uses the correct Mimo timestamp.
+                            sm.transition(SparkState.SPEAKING)
+                            state_queue.put(SparkState.SPEAKING)
+                            print(f"[{get_timestamp()}] 🔊 Speaking ({brain.mode.upper()} | {brain.text_model})")
                             # Send transcript to UI (AFTER Speaking state — frontend needs mimoSpeakTimeStr set first)
                             transcript_queue.put((transcription, response))
                             play_voice_stream(tts, response, tts_queue, stop_audio_flag)

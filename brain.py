@@ -12,7 +12,7 @@ from config import (
     LOCAL_TEXT_MODEL, LOCAL_VISION_MODEL,
     OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
     CLOUD_TEXT_MODEL, CLOUD_VISION_MODEL,
-    BRAVE_API_KEY
+    BRAVE_API_KEY, GEMINI_API_KEY
 )
 # A lightweight, ultra-fast post-processing guardrail for common Simplified Chinese characters
 S2T_DICT = {
@@ -233,12 +233,19 @@ class OllamaBrain:
         self.warmup()
 
     def _init_cloud_client(self):
-        """Initialize OpenAI client pointing at OpenRouter."""
+        """Initialize OpenAI client pointing at OpenRouter and Google Gemini API if configured."""
         from openai import OpenAI
         self._cloud_client = OpenAI(
             api_key=OPENROUTER_API_KEY,
             base_url=OPENROUTER_BASE_URL
         )
+        if GEMINI_API_KEY:
+            self._gemini_client = OpenAI(
+                api_key=GEMINI_API_KEY,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
+        else:
+            self._gemini_client = None
 
     def set_mode(self, mode: str):
         """Switch between 'local' and 'cloud' LLM mode at runtime."""
@@ -325,7 +332,7 @@ class OllamaBrain:
             print(f"  ╚═ ⛔ Daily limit reached! Switch to Local mode.")
 
     def _cloud_chat(self, messages: list, reasoning_effort: str = None, stream: bool = False) -> typing.Union[str, typing.Generator]:
-        """Send a chat request to OpenRouter API and return the content string.
+        """Send a chat request to OpenRouter API or Gemini API and return the content string.
         Snappily falls back to local Ollama immediately if rate-limited (429), not found (404),
         or if any cloud call fails, avoiding slow retry loops."""
         primary_model = self.text_model
@@ -339,17 +346,55 @@ class OllamaBrain:
 
         last_error = None
 
+        client = self._cloud_client
+        model_name = primary_model
         extra_body = {}
         if reasoning_effort:
             extra_body["reasoning"] = {"effort": reasoning_effort}
 
+        is_direct_gemini = primary_model in ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash"]
+        is_openrouter_gemini = primary_model in ["google/gemini-2.5-flash", "google/gemini-2.5-flash-lite"]
+        
+        if is_direct_gemini or is_openrouter_gemini:
+            import settings_manager
+            settings = settings_manager.load_settings()
+            use_reasoning = settings.get("cloud_use_reasoning", False)
+            
+            if is_direct_gemini and GEMINI_API_KEY:
+                if not hasattr(self, "_gemini_client") or self._gemini_client is None:
+                    from openai import OpenAI
+                    self._gemini_client = OpenAI(
+                        api_key=GEMINI_API_KEY,
+                        base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                    )
+                client = self._gemini_client
+                model_name = primary_model
+                
+                extra_body = {
+                    "reasoning_effort": "medium" if use_reasoning else "low"
+                }
+            else:
+                client = self._cloud_client
+                model_name = primary_model if primary_model.startswith("google/") else f"google/{primary_model}"
+                if use_reasoning:
+                    extra_body = {
+                        "reasoning": {
+                            "effort": "medium"
+                        }
+                    }
+
+        if stream:
+            timeout_val = (12.0, 15.0) if (reasoning_effort == "high" or "high" in primary_model) else (6.0, 10.0)
+        else:
+            timeout_val = 12.0 if (reasoning_effort == "high" or "high" in primary_model) else 6.0
+
         try:
-            self._track_call(label=primary_model)
-            response = self._cloud_client.chat.completions.create(
-                model=primary_model,
+            self._track_call(label=model_name)
+            response = client.chat.completions.create(
+                model=model_name,
                 messages=messages,
                 temperature=0.3,
-                timeout=12.0 if reasoning_effort == "high" else 6.0,  # Strict timeout
+                timeout=timeout_val,
                 extra_body=extra_body,
                 stream=stream
             )
@@ -366,13 +411,13 @@ class OllamaBrain:
                 return response.choices[0].message.content.strip()
         except Exception as e:
             err_str = str(e)
-            print(f"⚠️ [OpenRouter API] Model {primary_model} failed: {err_str}")
+            print(f"⚠️ [Cloud API] Model {model_name} failed: {err_str}")
             last_error = e
 
             # Handle models rejecting system role by merging (400 Bad Request)
             if "400" in err_str and ("system" in err_str.lower() or "instruction" in err_str.lower()):
                 try:
-                    print(f"[Cloud] Model {primary_model} doesn't support system role — merging into user message.")
+                    print(f"[Cloud] Model {model_name} doesn't support system role — merging into user message.")
                     merged_user = ""
                     user_parts = []
                     for m in messages:
@@ -383,11 +428,11 @@ class OllamaBrain:
                     if user_parts:
                         user_parts[0]["content"] = merged_user + user_parts[0]["content"]
 
-                    response = self._cloud_client.chat.completions.create(
-                        model=primary_model,
+                    response = client.chat.completions.create(
+                        model=model_name,
                         messages=user_parts,
                         temperature=0.3,
-                        timeout=12.0 if reasoning_effort == "high" else 6.0,
+                        timeout=timeout_val,
                         extra_body=extra_body,
                         stream=stream
                     )
@@ -403,11 +448,11 @@ class OllamaBrain:
                     else:
                         return response.choices[0].message.content.strip()
                 except Exception as inner_e:
-                    print(f"⚠️ [OpenRouter API] Merged-role request for {primary_model} also failed: {inner_e}")
+                    print(f"⚠️ [Cloud API] Merged-role request for {model_name} also failed: {inner_e}")
                     last_error = inner_e
 
         # Ultimate instant fallback to local model - extremely fast and snappy!
-        print("🚨 [OpenRouter API] Cloud model failed or rate-limited. Falling back to local Ollama model immediately...")
+        print("🚨 [Cloud API] Cloud model failed or rate-limited. Falling back to local Ollama model immediately...")
         try:
             system_prompt = next((m["content"] for m in messages if m["role"] == "system"), "")
             user_prompt = next((m["content"] for m in messages if m["role"] == "user"), "")

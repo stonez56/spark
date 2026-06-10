@@ -559,6 +559,11 @@
                             <option value="google/gemma-4-31b-it:free">google/gemma-4-31b-it (Free)</option>
                             <option value="moonshotai/kimi-k2.6:free">moonshotai/kimi-k2.6 (Free)</option>
                             <option value="deepseek/deepseek-v4-flash">deepseek/deepseek-v4-flash (Paid)</option>
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+                            <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                            <option value="google/gemini-2.5-flash">google/gemini-2.5-flash (Paid)</option>
+                            <option value="google/gemini-2.5-flash-lite">google/gemini-2.5-flash-lite (Paid)</option>
                         </select>
                     </div>
                     <div class="form-group" id="cloud-reasoning-group" style="flex-direction: row; align-items: center; gap: 10px; margin-top: 15px;">
@@ -806,6 +811,7 @@
 
     // --- Settings Logic ---
     let currentRoutingMode = 'local';
+    let loadedPatientName = '';
 
     function updateRoutingModeButtons(mode) {
         currentRoutingMode = mode;
@@ -852,6 +858,7 @@
             const res = await fetch('/api/settings');
             const data = await res.json();
             document.getElementById('patient-name').value = data.patient_name || '';
+            loadedPatientName = data.patient_name || '';
             document.getElementById('caregiver-name').value = data.caregiver_name || '';
             document.getElementById('speaking-speed').value = data.speaking_speed || 'normal';
             document.getElementById('offload-local-llm').checked = data.offload_local_llm !== false;
@@ -893,7 +900,13 @@
         spinner.style.display = 'block';
         msg.style.display = 'inline';
         msg.style.color = '#ffcc00';
-        msg.innerText = `正在為${patient || '主人'}重新合成專屬傲嬌語音，請稍候...`;
+        
+        const patientChanged = (patient !== loadedPatientName);
+        if (patientChanged) {
+            msg.innerText = `正在為${patient || '主人'}重新合成專屬傲嬌語音，請稍候...`;
+        } else {
+            msg.innerText = '正在儲存系統設定...';
+        }
         
         try {
             await fetch('/api/settings', {
@@ -913,7 +926,12 @@
                     personality: personality
                 })
             });
-            await new Promise(r => setTimeout(r, 5000));
+            if (patientChanged) {
+                await new Promise(r => setTimeout(r, 5000));
+                loadedPatientName = patient;
+            } else {
+                await new Promise(r => setTimeout(r, 300));
+            }
             msg.style.color = '#00ffff';
             msg.innerText = '儲存成功！';
         } catch(e) {
