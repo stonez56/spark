@@ -32,8 +32,7 @@ WAKE_WORD = "models/小白.onnx"
 # ──────────────────────────────────────────
 # LOCAL (Ollama) settings
 # ──────────────────────────────────────────
-LOCAL_TEXT_MODEL   = "llama3.2:3b"
-#LOCAL_TEXT_MODEL   = "gemma4:e2b"
+LOCAL_TEXT_MODEL   = "gemma3:1b"
 LOCAL_VISION_MODEL = "moondream"
 
 # ──────────────────────────────────────────
@@ -51,6 +50,6 @@ GEMINI_API_KEY      = os.getenv("GEMINI_API_KEY", "")
 CWA_API_KEY = os.getenv("CWA_API_KEY", "")
 BRAVE_API_KEY = os.getenv("BRAVE_API_KEY", "")
 
-# ── Cloud TEXT & VISION models (using OpenRouter API) ──────────────────
-CLOUD_TEXT_MODEL   = "openai/gpt-oss-120b:free"
+# ── Cloud TEXT & VISION models ──────────────────
+CLOUD_TEXT_MODEL   = "gemini-2.5-flash"
 CLOUD_VISION_MODEL = "moondream"

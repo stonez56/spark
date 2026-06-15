@@ -1,0 +1,19 @@
+{
+    "patient_name": "主人",
+    "caregiver_name": "小白",
+    "speaking_speed": "fast",
+    "dialogue_mode": "local",
+    "routing_mode": "local",
+    "offload_local_llm": true,
+    "cloud_text_model": "google/gemini-2.5-flash",
+    "cloud_use_reasoning": false,
+    "search_rewrite_mode": "local_llm",
+    "stt_model_size": "small",
+    "personality": "respectful",
+    "user_city": "新竹市",
+    "user_district": "",
+    "city": "新竹市",
+    "district": "",
+    "user_latitude": 24.8065,
+    "user_longitude": 120.9706
+}

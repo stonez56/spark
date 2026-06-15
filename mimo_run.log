@@ -1,0 +1,146 @@
+[0;93m2026-06-15 16:59:16.486348145 [W:onnxruntime:Default, device_discovery.cc:283 GetGpuDevices] Failed to detect devices under "/sys/class/drm/card0": device_discovery.cc:93 ReadFileContents Failed to open file: "/sys/class/drm/card0/device/vendor"[m
+[2026-06-15 16:59:16] 
+==================================================
+[2026-06-15 16:59:16] Web UI Server is starting!
+[2026-06-15 16:59:16] Please open your browser to: http://localhost:8000/
+[2026-06-15 16:59:16] ==================================================
+
+[2026-06-15 16:59:16] 🟢 [WebSocket] Browser client connected!
+[2026-06-15 16:59:16] 🎙️ [WebSocket] Audio stream active (receiving microphone data)...
+[2026-06-15 16:59:17] 🖥️ [Browser Log] Mimo state transition: Idle -> Loading
+[2026-06-15 16:59:19] ⚠️ [OLED] Failed to initialize physical OLED device: I2C device not found: /dev/i2c-1. Falling back to mock mode.
+[2026-06-15 16:59:19] 🤖 [MockOLED] Hardware or library missing. Initializing MockOLEDController.
+[2026-06-15 16:59:19][2026-06-15 16:59:19] 🤖 [MockOLED] Mock render loop started.
+[2026-06-15 16:59:19] Loading AI Models...
+ 🖼️ [MockOLED] State changed to LOADING. Rendering appropriate facial expression to console/logs.
+[2026-06-15 16:59:20] Loading custom openWakeWord model from path: models/小白.onnx
+[2026-06-15 16:59:21] [STT] Loading sherpa-onnx streaming model from /home/user/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20...
+[2026-06-15 16:59:22] [Cloud Mode] Text: gemini-2.5-flash
+[2026-06-15 16:59:22] [Cloud Mode] Vision: moondream
+[2026-06-15 16:59:22] [Cloud Mode] Reasoning: False
+[2026-06-15 16:59:22] [Cloud Mode] Search Rewrite Mode: cloud_llm
+[2026-06-15 16:59:22] [Cloud Mode] Offloading local models 'gemma3:1b' and 'moondream' from Ollama memory...
+[2026-06-15 16:59:23] HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+[2026-06-15 16:59:23] HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+[2026-06-15 16:59:23] [Cloud Mode] Local models offloaded successfully.
+[2026-06-15 16:59:23] Loading bilingual Piper TTS models...
+[2026-06-15 16:59:26] [AudioCache] Loaded cached purring sound effect (呼嚕聲) from disk.
+[2026-06-15 16:59:26] [AudioCache] Granular initializing fillers (Owner: '主人' | Name Changed: False)...
+[2026-06-15 16:59:26] [AudioCache] Loaded 55 static files, synthesized 0 dynamic files.
+[2026-06-15 16:59:26] 🤖 [MockGimbal] Servo gimbal driver missing. Running in MockGimbalController.
+[ WARN:0@10.284] global cap_v4l.cpp:914 open VIDEOIO(V4L2:/dev/video0): can't open camera by index
+[ WARN:0@10.285] global cap.cpp:438 open VIDEOIO(FFMPEG): raised OpenCV exception:
+
+OpenCV(4.13.0) /io/opencv/modules/videoio/src/cap_ffmpeg_impl.hpp:1220: error: (-2:Unspecified error) in function 'bool CvCapture_FFMPEG::open(const char*, int, const cv::Ptr<cv::IStreamReader>&, const cv::VideoCaptureParameters&)'
+> VIDEOIO/FFMPEG: Camera index out of range (expected: 'index < device_list->nb_devices'), where
+>     'index' is 0
+> must be less than
+>     'device_list->nb_devices' is 0
+
+
+[ERROR:0@10.285] global obsensor_uvc_stream_channel.cpp:163 getStreamChannelGroup Camera index out of range
+[ WARN:0@10.285] global cap_v4l.cpp:914 open VIDEOIO(V4L2:/dev/video2): can't open camera by index
+[ WARN:0@10.285] global cap.cpp:438 open VIDEOIO(FFMPEG): raised OpenCV exception:
+
+OpenCV(4.13.0) /io/opencv/modules/videoio/src/cap_ffmpeg_impl.hpp:1220: error: (-2:Unspecified error) in function 'bool CvCapture_FFMPEG::open(const char*, int, const cv::Ptr<cv::IStreamReader>&, const cv::VideoCaptureParameters&)'
+> VIDEOIO/FFMPEG: Camera index out of range (expected: 'index < device_list->nb_devices'), where
+>     'index' is 2
+> must be less than
+>     'device_list->nb_devices' is 0
+
+
+[ERROR:0@10.285] global obsensor_uvc_stream_channel.cpp:163 getStreamChannelGroup Camera index out of range
+[2026-06-15 16:59:26] ⚠️ [CameraController] No physical camera found via cv2.VideoCapture. Falling back to Mock mode.
+[2026-06-15 16:59:26] 👁️ [CameraController] Camera thread started.
+[2026-06-15 16:59:26] [2026-06-15 16:59:26.834] State transitioned from LOADING to IDLE
+[2026-06-15 16:59:26] All models loaded. Ready for interaction! [Mode: cloud | Model: gemini-2.5-flash]
+[2026-06-15 16:59:26] 🖥️ [Browser Log] Mimo state transition: Loading -> Idle
+[2026-06-15 16:59:26] 🖥️ [Browser Log] stopAllAudio() called. Active sources count: 0, currentMimoState: Loading
+[2026-06-15 16:59:27] 🖼️ [MockOLED] State changed to IDLE. Rendering appropriate facial expression to console/logs.
+[2026-06-15 17:00:44] 🔴 [WebSocket] Browser client disconnected.
+[2026-06-15 17:01:03] 🟢 [WebSocket] Browser client connected!
+[2026-06-15 17:01:03] 🎙️ [WebSocket] Audio stream active (receiving microphone data)...
+[2026-06-15 17:01:12] Wake word detected! (小白: 1.00)
+[2026-06-15 17:01:12] [2026-06-15 17:01:12.632] State transitioned from IDLE to LISTENING
+[2026-06-15 17:01:12] 🖥️ [Browser Log] Mimo state transition: Idle -> Listening
+[2026-06-15 17:01:12] 🖥️ [Browser Log] stopAllAudio() called. Active sources count: 0, currentMimoState: Idle
+[2026-06-15 17:01:12] 🖼️ [MockOLED] State changed to LISTENING. Rendering appropriate facial expression to console/logs.
+[2026-06-15 17:01:16] [2026-06-15 17:01:16.576] Speech stopped detected (silence for 1.25s). Processing...
+[2026-06-15 17:01:16] [2026-06-15 17:01:16.576] State transitioned from LISTENING to THINKING
+[2026-06-15 17:01:16] [2026-06-15 17:01:16.577] 🎤 User said  : 
+[2026-06-15 17:01:16] [2026-06-15 17:01:16.577] [System] No meaningful speech detected (only silence or punctuation). Returning to Idle.
+[2026-06-15 17:01:16] [2026-06-15 17:01:16.578] State transitioned from THINKING to IDLE
+[2026-06-15 17:01:16] [Web UI] Broadcasting 154350 bytes of audio to clients...
+[2026-06-15 17:01:16] [Web UI] Broadcasting 1 bytes of audio to clients...
+[2026-06-15 17:01:16] 🖥️ [Browser Log] playAudio entered, chunk size: 154350 bytes. State: running
+[2026-06-15 17:01:16] 🖥️ [Browser Log] Scheduling chunk: nextStartTime=13.413 (was 0.000), now=13.363, duration=3.500
+[2026-06-15 17:01:16] 🖥️ [Browser Log] Binary STOP signal received. Stopping all audio.
+[2026-06-15 17:01:16] 🖥️ [Browser Log] stopAllAudio() called. Active sources count: 1, currentMimoState: Listening
+[2026-06-15 17:01:16] 🖥️ [Browser Log] Mimo state transition: Listening -> Thinking
+[2026-06-15 17:01:16] 🖥️ [Browser Log] Mimo state transition: Thinking -> Idle
+[2026-06-15 17:01:16] 🖥️ [Browser Log] stopAllAudio() called. Active sources count: 0, currentMimoState: Thinking
+[2026-06-15 17:01:16] 🖼️ [MockOLED] State changed to IDLE. Rendering appropriate facial expression to console/logs.
+[2026-06-15 17:01:23] Wake word detected! (小白: 0.98)
+[2026-06-15 17:01:23] [2026-06-15 17:01:23.022] State transitioned from IDLE to LISTENING
+[2026-06-15 17:01:23] 🖥️ [Browser Log] Mimo state transition: Idle -> Listening
+[2026-06-15 17:01:23] 🖥️ [Browser Log] stopAllAudio() called. Active sources count: 0, currentMimoState: Idle
+[2026-06-15 17:01:23] 🖼️ [MockOLED] State changed to LISTENING. Rendering appropriate facial expression to console/logs.
+[2026-06-15 17:01:27] [2026-06-15 17:01:27.202] Speech stopped detected (silence for 1.24s). Processing...
+[2026-06-15 17:01:27] [2026-06-15 17:01:27.203] State transitioned from LISTENING to THINKING
+[2026-06-15 17:01:27] [2026-06-15 17:01:27.203] 🎤 User said  : 你在做什麼啊
+[2026-06-15 17:01:27] Routing intent for: 你在做什麼啊
+[2026-06-15 17:01:27] 🖥️ [Browser Log] Mimo state transition: Listening -> Thinking
+[2026-06-15 17:01:27] Using Cloud LLM for intent routing...
+[2026-06-15 17:01:27]   ╔═ OpenRouter API [gemini-2.5-flash] call #1/50 | remaining: 49 | OK
+[2026-06-15 17:01:27]   ║  [█░░░░░░░░░░░░░░░░░░░]
+[2026-06-15 17:01:27] [Web UI] Broadcasting 154350 bytes of audio to clients...
+[2026-06-15 17:01:27] 🖥️ [Browser Log] playAudio entered, chunk size: 154350 bytes. State: running
+[2026-06-15 17:01:27] 🖥️ [Browser Log] Scheduling chunk: nextStartTime=23.746 (was 0.000), now=23.696, duration=3.500
+[2026-06-15 17:01:27] 🖼️ [MockOLED] State changed to THINKING. Rendering appropriate facial expression to console/logs.
+[2026-06-15 17:01:30] HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions "HTTP/1.1 503 Service Unavailable"
+[2026-06-15 17:01:30] Retrying request to /chat/completions in 0.398223 seconds
+[2026-06-15 17:01:37] Retrying request to /chat/completions in 0.953415 seconds
+[2026-06-15 17:01:43] ⚠️ [Cloud API] Model gemini-2.5-flash failed: Request timed out.
+[2026-06-15 17:01:43] 🚨 [Cloud API] Cloud model failed or rate-limited. Falling back to local Ollama model immediately...
+[2026-06-15 17:01:58] HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+[2026-06-15 17:01:58] [2026-06-15 17:01:58.352] 🔀 Intent     : chat
+[2026-06-15 17:01:58] [2026-06-15 17:01:58.352] ✅ Decided    : chat
+[2026-06-15 17:01:58] [2026-06-15 17:01:58.364] Sending to LLM (cloud): 你在做什麼啊
+[2026-06-15 17:01:58]   ╔═ OpenRouter API [gemini-2.5-flash] call #2/50 | remaining: 48 | OK
+[2026-06-15 17:01:58]   ║  [██░░░░░░░░░░░░░░░░░░]
+[2026-06-15 17:02:03] HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/openai/chat/completions "HTTP/1.1 503 Service Unavailable"
+[2026-06-15 17:02:03] Retrying request to /chat/completions in 0.464151 seconds
+[2026-06-15 17:02:13] Retrying request to /chat/completions in 0.855556 seconds
+[2026-06-15 17:02:24] ⚠️ [Cloud API] Model gemini-2.5-flash failed: Request timed out.
+[2026-06-15 17:02:24] 🚨 [Cloud API] Cloud model failed or rate-limited. Falling back to local Ollama model immediately...
+[2026-06-15 17:02:24] [2026-06-15 17:02:24.574] ── TTS START ─────────────────────────
+[2026-06-15 17:02:24] [Web UI] Broadcasting 1 bytes of audio to clients...
+[2026-06-15 17:02:24] 🖥️ [Browser Log] Binary STOP signal received. Stopping all audio.
+[2026-06-15 17:02:24] 🖥️ [Browser Log] stopAllAudio() called. Active sources count: 0, currentMimoState: Thinking
+[2026-06-15 17:02:27] HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+[2026-06-15 17:02:27] [2026-06-15 17:02:27.685] State transitioned from THINKING to SPEAKING
+[2026-06-15 17:02:27] [2026-06-15 17:02:27.685] 🔊 Speaking (Streaming)
+[2026-06-15 17:02:27] [2026-06-15 17:02:27.685] [Streaming TTS] Synthesizing: '哼，你這蠢人類，想知道我做些什麼？'
+[2026-06-15 17:02:27] [TTS Lang Blocks] [('哼，你這蠢人類，想知道我做些什麼？', 'zh')]
+[2026-06-15 17:02:27] [TTS Sentences] 1 chunks: ['哼，你這蠢人類，想知道我...']
+[2026-06-15 17:02:27] [TTS Sentence] [zh] '哼，你這蠢人類，想知道我做些什麼？'
+[2026-06-15 17:02:27] 🖥️ [Browser Log] Mimo state transition: Thinking -> Speaking
+[2026-06-15 17:02:28] 🖼️ [MockOLED] State changed to SPEAKING. Rendering appropriate facial expression to console/logs.
+[2026-06-15 17:02:33] [2026-06-15 17:02:33.864] [Streaming TTS] Synthesizing: '喵～'
+[2026-06-15 17:02:33] [TTS Lang Blocks] [('喵～', 'zh')]
+[2026-06-15 17:02:33] [TTS Sentences] 1 chunks: ['喵～']
+[2026-06-15 17:02:33] [TTS Sentence] [zh] '喵～'
+[2026-06-15 17:02:33] [Web UI] Broadcasting 169472 bytes of audio to clients...
+[2026-06-15 17:02:33] 🖥️ [Browser Log] playAudio entered, chunk size: 169472 bytes. State: running
+[2026-06-15 17:02:33] 🖥️ [Browser Log] Scheduling chunk: nextStartTime=80.397 (was 0.000), now=80.347, duration=3.843
+[2026-06-15 17:02:33] [Web UI] Broadcasting 28160 bytes of audio to clients...
+[2026-06-15 17:02:33] 🖥️ [Browser Log] playAudio entered, chunk size: 28160 bytes. State: running
+[2026-06-15 17:02:33] 🖥️ [Browser Log] Scheduling chunk: nextStartTime=84.240 (was 84.240), now=80.393, duration=0.639
+[2026-06-15 17:02:39] Interaction saved to memory.
+[2026-06-15 17:02:39] [2026-06-15 17:02:39.327] 💬 Mimo says  : 哼，你這蠢人類，想知道我做些什麼？喵～
+[2026-06-15 17:02:39] [2026-06-15 17:02:39.327] ✅ TTS Done   : playback finished
+[2026-06-15 17:02:39] [2026-06-15 17:02:39.333] State transitioned from SPEAKING to IDLE
+[2026-06-15 17:02:39] 🖥️ [Browser Log] Mimo state transition: Speaking -> Idle
+[2026-06-15 17:02:39] 🖥️ [Browser Log] stopAllAudio() called. Active sources count: 0, currentMimoState: Speaking
+[2026-06-15 17:02:39] 🖼️ [MockOLED] State changed to IDLE. Rendering appropriate facial expression to console/logs.
+[2026-06-15 17:02:49] 🔴 [WebSocket] Browser client disconnected.

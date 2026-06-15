@@ -310,6 +310,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 # After speaking reminder, transition to LISTENING to await response
                 sm.transition(SparkState.LISTENING)
                 state_queue.put(SparkState.LISTENING)
+                stt.start_stream()
                 stt_buffer = []
                 listening_start = time.time()
                 last_active_time = time.time()
@@ -461,7 +462,30 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
         if not audio_queue.empty():
             audio_bytes = audio_queue.get()
 
-            if state == SparkState.IDLE:
+            if state == SparkState.SPEAKING:
+                # ── Full Duplex Interruption ──────────────────────────────
+                audio_data = np.frombuffer(audio_bytes, dtype=np.int16)
+                block_volume = np.abs(audio_data).mean() if len(audio_data) > 0 else 0
+                INTERRUPT_THRESHOLD = 350
+                if block_volume > INTERRUPT_THRESHOLD:
+                    print(f"[{get_timestamp()}] 🛑 User speech detected while Mimo speaking (volume {block_volume:.1f} > {INTERRUPT_THRESHOLD}). INTERRUPTING TTS!")
+                    stop_audio_flag.set()
+                    tts_queue.put(b'\x02')  # Stop playback in frontend
+                    while not audio_queue.empty():
+                        try:
+                            audio_queue.get_nowait()
+                        except:
+                            break
+                    sm.transition(SparkState.LISTENING)
+                    state_queue.put(SparkState.LISTENING)
+                    stt.start_stream()
+                    stt_buffer = []
+                    listening_start = time.time()
+                    last_active_time = time.time()
+                    has_spoken = False
+                    continue
+
+            elif state == SparkState.IDLE:
                 audio_buffer.extend(audio_bytes)
                 while len(audio_buffer) >= CHUNK_BYTES:
                     chunk = audio_buffer[:CHUNK_BYTES]
@@ -498,6 +522,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                             # ── Now enter LISTENING ────────────────────────────
                             sm.transition(SparkState.LISTENING)
                             state_queue.put(SparkState.LISTENING)
+                            stt.start_stream()
                             stt_buffer = []
                             listening_start = time.time()
                             last_active_time = time.time()
@@ -520,11 +545,20 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 audio_data = np.frombuffer(audio_bytes, dtype=np.int16)
                 stt_buffer.append(audio_data)
 
+                # Feed to streaming ASR
+                stt.process_chunk(audio_data)
+                current_text = stt.get_text()
+
                 # ── Voice Activity Detection (VAD) 簡易且健全的能量檢測 ──
                 block_volume = np.abs(audio_data).mean() if len(audio_data) > 0 else 0
                 SILENCE_THRESHOLD = 250
                 SILENCE_TIMEOUT = active_silence_timeout
                 MAX_RECORDING_TIME = 15.0
+                
+                # Adaptive VAD based on trailing question/ending particles
+                if current_text:
+                    if any(current_text.endswith(p) for p in ["嗎", "呢", "吧", "啦", "哈", "嗎？", "呢？", "吧？", "啦？", "哈？", "?", "？"]):
+                        SILENCE_TIMEOUT = 0.6
                 
                 now_time = time.time()
                 if block_volume > SILENCE_THRESHOLD:
@@ -555,10 +589,8 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                     if filler_bytes:
                         tts_queue.put(filler_bytes)
 
-                    full_audio = np.concatenate(stt_buffer)
-                    print(f"[{get_timestamp()}] ── ASR START ─────────────────────────")
-                    recent_history = memory.get_recent_history(limit=2)
-                    transcription = stt.transcribe(full_audio, chat_history=recent_history)
+                    # Retrieve final text from the stream instantly
+                    transcription = stt.get_text()
                     print(f"[{get_timestamp()}] 🎤 User said  : {transcription}")
 
                     import re
@@ -752,6 +784,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                         # Auto-transition to LISTENING for seamless follow-up!
                         sm.transition(SparkState.LISTENING)
                         state_queue.put(SparkState.LISTENING)
+                        stt.start_stream()
                         stt_buffer = []
                         listening_start = time.time()
                         last_active_time = time.time()

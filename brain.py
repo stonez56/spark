@@ -52,10 +52,27 @@ S2T_DICT = {
     '纽': '紐', '约': '約', '华': '華'
 }
 
+_opencc_converter = None
+
 def clean_traditional_chinese(text: str) -> str:
     if not text:
         return text
-    return "".join(S2T_DICT.get(c, c) for c in text)
+    global _opencc_converter
+    if _opencc_converter is None:
+        try:
+            from opencc import OpenCC
+            _opencc_converter = OpenCC('s2tw')
+        except Exception as e:
+            print(f"Failed to initialize OpenCC: {e}")
+            class FallbackConverter:
+                def convert(self, t):
+                    return "".join(S2T_DICT.get(c, c) for c in t)
+            _opencc_converter = FallbackConverter()
+    try:
+        return _opencc_converter.convert(text)
+    except Exception as e:
+        print(f"OpenCC convert error: {e}")
+        return "".join(S2T_DICT.get(c, c) for c in text)
 
 
 def legacy_refine_search_query(query: str) -> str:
@@ -463,8 +480,8 @@ class OllamaBrain:
             print(f"🚨 [Ollama] Local fallback also failed: {local_err}")
             raise last_error if last_error else local_err
 
-    def _local_generate(self, prompt: str, model: str = None, options: dict = None, stream: bool = False, **kwargs) -> typing.Union[str, typing.Generator]:
-        """Send a generate request to local Ollama using chat API with minimal parameters."""
+    def _local_generate(self, prompt_or_messages: typing.Union[str, list], model: str = None, options: dict = None, stream: bool = False, **kwargs) -> typing.Union[str, typing.Generator]:
+        """Send a generate request to local Ollama using chat API."""
         target_model = model if model else self.text_model
         if target_model == CLOUD_TEXT_MODEL:
             target_model = LOCAL_TEXT_MODEL
@@ -478,9 +495,14 @@ class OllamaBrain:
         if options:
             opts.update(options)
 
+        if isinstance(prompt_or_messages, list):
+            messages = prompt_or_messages
+        else:
+            messages = [{'role': 'user', 'content': prompt_or_messages}]
+
         response = ollama.chat(
             model=target_model,
-            messages=[{'role': 'user', 'content': prompt}],
+            messages=messages,
             options=opts,
             stream=stream
         )
@@ -669,11 +691,12 @@ class OllamaBrain:
                     weather_summary = weather_mod.format_weather_for_llm(cwa_data)
                     print(f"[Brain Weather] CWA data OK:\n{weather_summary}")
                     personality = _sm.load_settings().get("personality", "proud")
-                    prompt = prompts.get_weather_prompt(query, cwa_data["city"], weather_summary, personality=personality)
+                    is_local_llm = (self.mode == "local")
+                    prompt = prompts.get_weather_prompt(query, cwa_data["city"], weather_summary, personality=personality, is_local=is_local_llm)
                     if self.mode == "cloud":
                         res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="low", stream=stream)
                     else:
-                        res = self._local_generate(prompt, options={"num_predict": 200, "temperature": 0.5, "repeat_penalty": 1.1}, stream=stream)
+                        res = self._local_generate(prompt, options={"num_predict": 200, "temperature": 0.3, "repeat_penalty": 1.1}, stream=stream)
                     if stream:
                         def _clean_cwa_stream():
                             for chunk in res:
@@ -826,11 +849,12 @@ class OllamaBrain:
             )
             import settings_manager as _sm
             personality = _sm.load_settings().get("personality", "proud")
-            prompt = prompts.get_search_web_prompt(query, lang_rule, search_context, personality=personality)
+            is_local_llm = (self.mode == "local")
+            prompt = prompts.get_search_web_prompt(query, lang_rule, search_context, personality=personality, is_local=is_local_llm)
             if self.mode == "cloud":
                 res = self._cloud_chat([{"role": "user", "content": prompt}], reasoning_effort="high", stream=stream)
             else:
-                res = self._local_generate(prompt, options={"num_predict": 250, "temperature": 0.4, "repeat_penalty": 1.1}, stream=stream)
+                res = self._local_generate(prompt, options={"num_predict": 250, "temperature": 0.3, "repeat_penalty": 1.1}, stream=stream)
             
             if stream:
                 def clean_stream():
@@ -914,11 +938,11 @@ class OllamaBrain:
 
         if not fallback_to_llm:
             # 0ms 本地啟發式分流 (Local Heuristic Routing)
-            # 判斷是否為問句，或長度大於 12 字，是則偏向 search_web，否則為一般 chat
-            is_question = any(q in normalized_input for q in ["?", "？", "嗎", "什", "怎", "幾", "几", "誰", "谁"])
-            has_long_query = len(normalized_input) > 12
+            # 判斷是否包含明顯示的問句/資訊尋找特徵，而非普通的日常閒聊問句（如：你、我、喵、好嗎）
+            is_search_question = any(q in normalized_input for q in ["什麼是", "怎麼", "如何", "為什麼", "為何", "介紹", "說明", "解釋", "景點", "多少錢"])
+            has_long_query = len(normalized_input) > 25
             
-            if is_question or has_long_query:
+            if is_search_question or (has_long_query and not any(w in normalized_input for w in ["你", "我", "喵", "哈哈"])):
                 decided_intent = "search_web"
             else:
                 decided_intent = "chat"
@@ -958,9 +982,9 @@ class OllamaBrain:
             except Exception as e:
                 print(f"Cloud intent routing fallback error: {e}")
 
-        print("Using local LLM (llama3.2:3b) for intent routing...")
+        print(f"Using local LLM ({LOCAL_TEXT_MODEL}) for intent routing...")
         try:
-            intent_model = "llama3.2:3b"
+            intent_model = LOCAL_TEXT_MODEL
             merged_prompt = f"{system_prompt}\n\nUser Input: {user_input}\n請只回傳一個單詞（動作名稱）："
             
             response = ollama.chat(
@@ -1090,11 +1114,12 @@ class OllamaBrain:
         is_knowledge_query = any(kw in prompt.lower() for kw in ["什麼是", "解釋", "介紹", "如何", "怎麼", "為何", "為什麼", "說明", "llm", "ai", "gpt", "科技", "科普"])
         
         # ── 3. 全面家庭安全防護紅線與拒答禁忌領域 (Comprehensive Family Safety Guardrails) ──
+        is_local_llm = (self.mode == "local")
         personality = settings.get("personality", "proud")
         if is_knowledge_query:
-            system_content = prompts.get_knowledge_system_prompt(caregiver_name, patient_name, time_context, lang_instruction, personality=personality)
+            system_content = prompts.get_knowledge_system_prompt(caregiver_name, patient_name, time_context, lang_instruction, personality=personality, is_local=is_local_llm)
         else:
-            system_content = prompts.get_normal_system_prompt(caregiver_name, patient_name, time_context, lang_instruction, personality=personality)
+            system_content = prompts.get_normal_system_prompt(caregiver_name, patient_name, time_context, lang_instruction, personality=personality, is_local=is_local_llm)
 
         print(f"[{get_timestamp()}] Sending to LLM ({self.mode}): {prompt}")
         try:
@@ -1114,15 +1139,16 @@ class OllamaBrain:
                 
                 res = self._cloud_chat(messages, reasoning_effort=reasoning_effort, stream=stream)
             else:
-                full_prompt = f"{system_content}\n\nUser: {prompt}"
+                messages = [{"role": "system", "content": system_content}]
                 if context_history:
-                    full_prompt = f"Previous Context:\n{context_history}\n\n" + full_prompt
+                    messages.append({"role": "assistant", "content": f"Context: {context_history}"})
+                messages.append({"role": "user", "content": prompt})
                 
                 # 依據 prompt 屬性決定 local 生成的最大 token 限制，強防重複退化死循環
                 limit_predict = 250 if is_knowledge_query else 120
                 res = self._local_generate(
-                    full_prompt,
-                    options={"temperature": 0.4, "repeat_penalty": 1.05, "num_predict": limit_predict},
+                    messages,
+                    options={"temperature": 0.3, "repeat_penalty": 1.1, "num_predict": limit_predict},
                     stream=stream
                 )
             

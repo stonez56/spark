@@ -12,6 +12,7 @@ from fastapi.responses import RedirectResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from state_machine import SparkState
+from config import LOCAL_TEXT_MODEL, CLOUD_TEXT_MODEL
 
 # Setup FastAPI app
 app = FastAPI()
@@ -346,9 +347,9 @@ async def run_server_loop(state_queue, audio_queue, tts_queue, mode_queue, trans
     settings = settings_manager.load_settings()
     app.state.current_mode = settings.get("dialogue_mode", "local")
     if app.state.current_mode == "cloud":
-        app.state.current_model = settings.get("cloud_text_model", "openai/gpt-oss-120b:free")
+        app.state.current_model = settings.get("cloud_text_model", CLOUD_TEXT_MODEL)
     else:
-        app.state.current_model = "llama3.2:3b"
+        app.state.current_model = LOCAL_TEXT_MODEL
 
     config = uvicorn.Config(app=app, host="0.0.0.0", port=8000, log_level="warning")
     server = uvicorn.Server(config)

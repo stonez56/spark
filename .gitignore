@@ -1,39 +1,13 @@
-# Environment configuration file
 .env
-
-# Python build artifacts and cache
+.AGENT.md
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Python virtual environment
-.venv/
-
-# AI models (ONNX, Whisper, Piper) - large binary files
-en_US*.onnx
-en_US*.json
-zh_CN*.onnx
-zh_CN*.json
-g2pW/g2pw.onnx
-
-# Zero-latency audio cache folder
-audio_cache_data/
-
-# Application databases & memory files
-*.db
-mimo_memory.db
-reminders.db
-spark_memory.db
-
-# Vector memories / ChromaDB directories
+__pychache__/
 mimo_chroma_db/
-mimo_chroma_db/*.bin
-chroma_db/
-memory/
-
-# Other temporary or build artifacts
-opencode
-length.bin
-
-# User runtime settings
-settings.json
+lib/
+bin/
+lib64
+models/en_US*
+models/zh_CN*
+tests/
+audio_cache_data/
+g2pW/

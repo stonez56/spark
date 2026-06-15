@@ -16,7 +16,7 @@
         }
 
         body {
-            background: #07050f;
+            background: #0B0E14;
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -122,21 +122,68 @@
             height: 100%;
         }
 
-        .eye,
+        .left-eye-group,
+        .right-eye-group {
+            transition: all 0.3s ease-in-out;
+        }
+
+        .eye-shape {
+            fill: #00FFCC;
+            transition: all 0.3s ease-in-out;
+            filter: drop-shadow(0 0 12px rgba(0, 255, 204, 0.6));
+            transform-origin: 250px 190px;
+        }
+        
+        .right-eye-group .eye-shape {
+            transform-origin: 510px 190px;
+        }
+
+        .eye-pupil {
+            fill: #0B0E14;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .eye-glow {
+            fill: #ffffff;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .heart-shape {
+            fill: #FF5E97;
+            opacity: 0;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+            transform-origin: 250px 190px;
+            filter: drop-shadow(0 0 15px rgba(255, 94, 151, 0.7));
+        }
+
+        .right-eye-group .heart-shape {
+            transform-origin: 510px 190px;
+        }
+
+        .thinking-shape {
+            stroke: #00FFCC;
+            stroke-width: 8;
+            stroke-linecap: round;
+            fill: none;
+            stroke-dasharray: 90 60;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            transform-origin: 250px 190px;
+            filter: drop-shadow(0 0 12px rgba(0, 255, 204, 0.6));
+        }
+
+        .right-eye-group .thinking-shape {
+            transform-origin: 510px 190px;
+        }
+
         .mouth {
             fill: none;
-            stroke: #00ffff;
-            stroke-width: 15;
+            stroke: #00FFCC;
+            stroke-width: 12;
             stroke-linecap: round;
             stroke-linejoin: round;
             transition: all 0.3s ease-in-out;
-            filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.5));
-        }
-
-        .eye-fill {
-            fill: #00ffff;
-            transition: all 0.3s ease-in-out;
-            filter: drop-shadow(0 0 10px rgba(0, 255, 255, 0.5));
+            filter: drop-shadow(0 0 12px rgba(0, 255, 204, 0.5));
         }
 
         /* ── Cat Ears & Whiskers ── */
@@ -212,109 +259,107 @@
             100% { transform: translateY(-2px); }
         }
 
-        /* States */
-        .state-Idle .left-eye {
-            ry: 30;
-            rx: 40;
-            cy: 190;
-            cx: 250;
+        /* ── Idle State (Breathing, Blinking, Normal Eyes) ── */
+        .state-Idle .left-eye-group,
+        .state-Idle .right-eye-group {
+            animation: idle-breathing 4s infinite ease-in-out;
+        }
+        
+        @keyframes idle-breathing {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
         }
 
-        .state-Idle .right-eye {
-            ry: 30;
-            rx: 40;
-            cy: 190;
-            cx: 510;
+        .state-Idle .eye-shape {
+            animation: blink 4s infinite;
+        }
+
+        @keyframes blink {
+            0%, 96%, 100% { transform: scaleY(1); }
+            98% { transform: scaleY(0.05); }
         }
 
         .state-Idle .mouth {
             d: path("M 330 330 Q 380 345 430 330");
         }
 
-        .state-Idle .left-eye,
-        .state-Idle .right-eye {
-            animation: blink 4s infinite;
+        /* ── Listening State (Wide Open glowing eyes) ── */
+        .state-Listening .eye-shape {
+            transform: scale(1.15);
+            filter: drop-shadow(0 0 20px rgba(0, 255, 204, 0.8));
         }
-
-        @keyframes blink {
-            0%, 95%, 100% { ry: 30; }
-            97% { ry: 2; }
-        }
-
-        .state-Listening .left-eye,
-        .state-Attentive .left-eye {
-            ry: 50;
-            rx: 50;
-            cy: 180;
-            cx: 250;
-        }
-
-        .state-Listening .right-eye,
-        .state-Attentive .right-eye {
-            ry: 50;
-            rx: 50;
-            cy: 180;
-            cx: 510;
-        }
-
-        .state-Listening .mouth,
-        .state-Attentive .mouth {
+        
+        .state-Listening .mouth {
             d: path("M 360 330 Q 380 360 400 330 Q 380 305 360 330");
-            fill: #00ffff;
+            fill: #00FFCC;
         }
 
-        .state-Thinking .left-eye {
-            ry: 8;
-            rx: 40;
-            cy: 180;
-            cx: 250;
-            transform: rotate(4deg);
-            transform-origin: 250px 180px;
+        /* ── Thinking State (Rotating loaders) ── */
+        .state-Thinking .eye-shape,
+        .state-Thinking .eye-pupil,
+        .state-Thinking .eye-glow {
+            opacity: 0;
         }
-
-        .state-Thinking .right-eye {
-            ry: 8;
-            rx: 40;
-            cy: 180;
-            cx: 510;
-            transform: rotate(-4deg);
-            transform-origin: 510px 180px;
+        
+        .state-Thinking .thinking-shape {
+            opacity: 1;
+            animation: spin 1.5s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         .state-Thinking .mouth {
             d: path("M 370 330 Q 385 320 400 330 Q 415 340 430 330");
+            animation: thinking-mouth-breath 3s infinite ease-in-out;
             transform-origin: 400px 330px;
-            animation: thinking-breath 4s infinite ease-in-out;
         }
 
-        @keyframes thinking-breath {
+        @keyframes thinking-mouth-breath {
             0%, 100% { transform: scale(1); }
-            50% { transform: scale(1.04); }
+            50% { transform: scale(1.05); }
         }
 
-        .state-Speaking .left-eye {
-            ry: 25;
-            rx: 40;
-            cy: 190;
-            cx: 250;
+        /* ── Speaking State (Waveform Mouth) ── */
+        .state-Speaking .eye-shape {
+            transform: scale(1.05);
         }
-
-        .state-Speaking .right-eye {
-            ry: 25;
-            rx: 40;
-            cy: 190;
-            cx: 510;
-        }
-
+        
         .state-Speaking .mouth {
-            d: path("M 300 330 Q 380 330 460 330 Q 380 375 300 330");
-            fill: #00ffff;
-            animation: talk 0.3s infinite alternate;
+            animation: mouth-talk 0.18s infinite alternate ease-in-out;
+            transform-origin: 380px 330px;
+            fill: #00FFCC;
         }
 
-        @keyframes talk {
-            0% { d: path("M 300 330 Q 380 330 460 330 Q 380 345 300 330"); }
-            100% { d: path("M 300 330 Q 380 330 460 330 Q 380 400 300 330"); }
+        @keyframes mouth-talk {
+            0% { d: path("M 360 330 Q 380 340 400 330 Q 380 320 360 330"); }
+            100% { d: path("M 355 330 Q 380 365 405 330 Q 380 295 355 330"); }
+        }
+
+        /* ── Attentive State (Heart eyes) ── */
+        .state-Attentive .eye-shape,
+        .state-Attentive .eye-pupil,
+        .state-Attentive .eye-glow {
+            opacity: 0;
+        }
+        
+        .state-Attentive .heart-shape {
+            opacity: 1;
+            animation: heart-pulse 0.8s infinite alternate ease-in-out;
+        }
+        
+        @keyframes heart-pulse {
+            0% { transform: scale(0.9); }
+            100% { transform: scale(1.1); }
+        }
+        
+        .state-Attentive .mouth {
+            d: path("M 360 330 Q 380 360 400 330 Q 380 305 360 330");
+            fill: #FF5E97;
+            stroke: #FF5E97;
+            filter: drop-shadow(0 0 12px rgba(255, 94, 151, 0.5));
         }
 
         /* ── State Label ── */
@@ -562,6 +607,11 @@
     <div id="top-bar">
         <div id="spark-title">🐈 MIMO</div>
 
+        <!-- Latency Badge -->
+        <div id="latency-badge" style="display: none; align-items: center; gap: 8px; background: rgba(0, 255, 255, 0.04); border: 1px solid rgba(0, 255, 255, 0.15); border-radius: 20px; padding: 6px 14px; font-size: 13px; color: #00ffff; font-weight: 600; text-shadow: 0 0 10px rgba(0, 255, 255, 0.2);">
+            ⏱️ Latency: <span id="latency-value">—</span>
+        </div>
+
         <div id="model-badge">
             <div id="mode-dot"></div>
             <span id="model-label">local · gemma3:1b</span>
@@ -596,8 +646,23 @@
                 <line class="cat-whisker right-whisker" x1="540" y1="320" x2="660" y2="335" />
 
                 <!-- Eyes and Mouth -->
-                <ellipse class="eye-fill left-eye" cx="250" cy="190" rx="40" ry="30" />
-                <ellipse class="eye-fill right-eye" cx="510" cy="190" rx="40" ry="30" />
+                <!-- Left Eye Group -->
+                <g class="left-eye-group">
+                    <ellipse class="eye-shape left-eye" cx="250" cy="190" rx="40" ry="30" />
+                    <ellipse class="eye-pupil left-pupil" cx="250" cy="190" rx="28" ry="18" />
+                    <circle class="eye-glow left-glow" cx="238" cy="180" r="6" />
+                    <path class="heart-shape" d="M 250,205 C 235,180 205,180 205,200 C 205,225 250,250 250,255 C 250,250 295,225 295,200 C 295,180 265,180 250,205 Z" />
+                    <circle class="thinking-shape" cx="250" cy="190" r="30" />
+                </g>
+
+                <!-- Right Eye Group -->
+                <g class="right-eye-group">
+                    <ellipse class="eye-shape right-eye" cx="510" cy="190" rx="40" ry="30" />
+                    <ellipse class="eye-pupil right-pupil" cx="510" cy="190" rx="28" ry="18" />
+                    <circle class="eye-glow right-glow" cx="498" cy="180" r="6" />
+                    <path class="heart-shape" d="M 510,205 C 495,180 465,180 465,200 C 465,225 510,250 510,255 C 510,250 555,225 555,200 C 555,180 525,180 510,205 Z" />
+                    <circle class="thinking-shape" cx="510" cy="190" r="30" />
+                </g>
                 <path class="mouth" d="M 330 330 Q 380 345 430 330" />
             </svg>
         </div>
@@ -794,10 +859,22 @@
                             if (s === "Thinking") {
                                 thinkingStart = Date.now();
                                 userSubmitTimeStr = getFormattedTime();
+                                const latBadge = document.getElementById('latency-badge');
+                                const latValue = document.getElementById('latency-value');
+                                if (latBadge && latValue) {
+                                    latValue.innerText = 'Calculating...';
+                                    latBadge.style.display = 'flex';
+                                }
                             } else if (s === "Speaking" && thinkingStart) {
                                 lastLatency = ((Date.now() - thinkingStart) / 1000).toFixed(2);
                                 mimoSpeakTimeStr = getFormattedTime();  // Mimo timestamp = when Speaking actually starts
                                 thinkingStart = null;
+                                const latBadge = document.getElementById('latency-badge');
+                                const latValue = document.getElementById('latency-value');
+                                if (latBadge && latValue) {
+                                    latValue.innerText = `${lastLatency}s`;
+                                    latBadge.style.display = 'flex';
+                                }
                             }
                             
                             // No looping purr sound to prevent background noise during speech
