@@ -15,6 +15,11 @@ class SparkSTT:
         self.model_dir = "/home/user/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20"
         self.recognizer = self._load_model()
         self.stream = None
+        
+        # Load Breeze settings
+        import settings_manager
+        settings = settings_manager.load_settings()
+        self.use_breeze_speech = settings.get("use_breeze_speech", False)
 
     def _load_model(self):
         print(f"[STT] Loading sherpa-onnx streaming model from {self.model_dir}...")
@@ -32,8 +37,21 @@ class SparkSTT:
         )
 
     def reload_settings(self):
-        # Using dedicated local streaming model, settings reload not required
-        pass
+        """Reload settings dynamically from settings.json."""
+        import settings_manager
+        settings = settings_manager.load_settings()
+        self.use_breeze_speech = settings.get("use_breeze_speech", False)
+        print(f"[STT Settings] Reloaded. use_breeze_speech: {self.use_breeze_speech}")
+
+    def transcribe_breeze(self, audio_data: np.ndarray, sample_rate=16000) -> str:
+        """
+        [Breeze ASR API Placeholder]
+        In the future, this will connect to the Breeze ASR endpoint to transcribe
+        Mandarin + English + Taiwanese Hokkien code-switched speech.
+        """
+        print("[Breeze ASR] Simulating Breeze ASR transcription for mixed language...")
+        # Fallback to local Zipformer
+        return self.transcribe(audio_data, sample_rate)
 
     def start_stream(self):
         """Initializes a new streaming ASR stream session."""
@@ -105,6 +123,19 @@ class SparkSTT:
                     cleaned_text = re.sub(r"元山(?!家電|牌|電器|扇)", "圓山", cleaned_text)
             except Exception as e:
                 print(f"Error correcting homophone: {e}")
+
+            if getattr(self, 'use_breeze_speech', False):
+                # Taiwanese localized input correction / homophone refinement
+                corrections = {
+                    r"安抓|安爪|按扎|阿抓|下爪": "按怎",
+                    r"姆湯|木湯|母湯": "毋湯",
+                    r"戴資|戴志|帶至|代幾|代機": "代誌",
+                    r"拍謝|排泄|排誰": "歹勢",
+                    r"踹貢|串共": "踹共",
+                    r"甲八煤|加包妹|甲霸沒|呷霸沒": "食飽未",
+                }
+                for pattern, replacement in corrections.items():
+                    cleaned_text = re.sub(pattern, replacement, cleaned_text)
                 
             return cleaned_text
         except Exception:

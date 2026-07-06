@@ -229,6 +229,14 @@ async def update_settings(payload: dict):
             settings["personality"] = new_personality
             if hasattr(app.state, 'mode_queue'):
                 app.state.mode_queue.put({"type": "settings_update"})
+                
+    if "use_breeze_speech" in payload:
+        new_use_breeze = bool(payload["use_breeze_speech"])
+        if new_use_breeze != settings.get("use_breeze_speech", False):
+            settings["use_breeze_speech"] = new_use_breeze
+            need_regenerate = True
+            if hasattr(app.state, 'mode_queue'):
+                app.state.mode_queue.put({"type": "settings_update"})
         
     settings_manager.save_settings(settings)
     

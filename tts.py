@@ -11,6 +11,11 @@ class SparkTTS:
         self.voice_zh = PiperVoice.load("models/zh_CN-xiao_ya-medium.onnx")
         self.voice_en = PiperVoice.load("models/en_US-lessac-medium.onnx")
         
+        # Load Breeze settings
+        import settings_manager
+        settings = settings_manager.load_settings()
+        self.use_breeze_speech = settings.get("use_breeze_speech", False)
+        
         # Dictionary of common conversational English words to translate to Traditional Chinese
         self.eng_to_zh = {
             "comfortable": "舒服",
@@ -48,6 +53,148 @@ class SparkTTS:
             "silly": "傻瓜",
             "angry": "生氣",
             "hungry": "肚子餓",
+        }
+
+        # Taiwanese Hokkien / Taiwan localized phonetic replacements dictionary (110+ items)
+        self.BREEZE_TAIWANESE_MAP = {
+            # 1. 人稱與代名詞 (Pronouns)
+            "我們": "溫",
+            "你們": "林",
+            "他們": "因",
+            "這裡": "這搭",
+            "那裡": "遐搭",
+            "誰": "夏狼",
+            "哪裡": "多位",
+            "什麼": "夏米",
+            "大家": "搭給",
+            "先生": "仙心",
+            "小姐": "ㄒㄧㄡˇ ㄐㄧㄚ",
+            
+            # 2. 日常問候與禮貌用語 (Greetings & Polite Terms)
+            "你好": "哩厚",
+            "你好嗎": "哩厚嗎",
+            "吃飽沒": "呷霸沒",
+            "吃飽未": "呷霸沒",
+            "食飽未": "呷霸沒",
+            "食飽沒": "呷霸沒",
+            "呷飽沒": "呷霸沒",
+            "呷飽未": "呷霸沒",
+            "吃飽了": "呷霸阿",
+            "謝謝你": "多夏哩",
+            "謝謝": "多夏",
+            "多謝": "多夏",
+            "對不起": "拍謝",
+            "抱歉": "拍謝",
+            "歹勢": "拍謝",
+            "沒關係": "毋關係",
+            "不用客氣": "免ㄎㄟˋ ㄎㄧ",
+            "免客氣": "免ㄎㄟˋ ㄎㄧ",
+            "再見": "災會",
+            "再會": "災會",
+            "早安": "告榨",
+            "早起": "遭起",
+            "晚安": "安",
+            "恭喜": "宮喜",
+            "拜託": "百托",
+            
+            # 3. 日常動詞與動作 (Verbs & Actions)
+            "睡覺": "困覺",
+            "吃飯": "呷飯",
+            "喝水": "飲水",
+            "洗澡": "誰行摳",
+            "走路": "行路",
+            "跑": "遭",
+            "說話": "宮威",
+            "聽話": "聽威",
+            "看": "誇",
+            "知道": "災央",
+            "不知道": "嗯災",
+            "買東西": "美蜜件",
+            "賺錢": "探金",
+            "花錢": "花金",
+            "生氣": "起杜",
+            "哭": "靠",
+            "笑": "秋",
+            "喜歡": "甲意",
+            "不喜歡": "嗯甲意",
+            "出來講": "踹共",
+            "散步": "散步",
+            "起床": "起景",
+            "回家": "多去",
+            
+            # 4. 形容詞與狀態 (Adjectives & States)
+            "不行": "姆湯",
+            "不可以": "姆湯",
+            "毋湯": "姆湯",
+            "母湯": "姆湯",
+            "真的": "金架",
+            "真正": "金架",
+            "實在": "洗災",
+            "丟掉": "蛋雕",
+            "厲害": "咬力",
+            "優秀": "咬力",
+            "漂亮": "水",
+            "醜": "擺",
+            "笨": "共",
+            "聰明": "聰明",
+            "累": "忝",
+            "肚子餓": "妖",
+            "飽": "霸",
+            "熱": "襪",
+            "冷": "冷",
+            "乾淨": "坎ㄎㄧ",
+            "骯髒": "拉撒",
+            "緊張": "緊將",
+            "隨便": "漆便",
+            "簡單": "簡單",
+            "困難": "困難",
+            "奇怪": "哥怪",
+            "高興": "花喜",
+            "舒服": "蘇服",
+            "孤單": "估單",
+            "棘手": "麻還",
+            
+            # 5. 時間、天氣與自然 (Time, Weather & Nature)
+            "今天": "今啊日",
+            "明天": "明啊載",
+            "昨天": "匝昏",
+            "天氣": "聽ㄎㄧ",
+            "下雨": "落雨",
+            "太陽": "日頭",
+            "月亮": "月娘",
+            "颳風": "起風",
+            "早上": "遭起",
+            "中午": "當晝",
+            "晚上": "暗摸",
+            "星期幾": "累百幾",
+            "年": "泥",
+            "歲": "嘿",
+            
+            # 6. 生活名詞與物品 (Daily Objects)
+            "頭殼": "頭ㄎㄚ",
+            "代誌": "代機",
+            "事情": "代機",
+            "東西": "蜜件",
+            "衣服": "衫",
+            "鞋子": "威",
+            "桌子": "多",
+            "椅子": "椅",
+            "電腦": "店腦",
+            "電話": "店威",
+            
+            # 7. 台灣流行語與感嘆詞 (Slangs & Particles)
+            "裝瘋賣傻": "裝孝維",
+            "靠北": "靠杯",
+            "靠腰": "靠腰",
+            "怎麼會這樣": "安捏",
+            "是按怎": "是下爪",
+            "順遂": "順sui",
+            "平安": "冰安",
+            "打拼": "趴ㄅㄧㄚ",
+            "打拚": "趴ㄅㄧㄚ",
+            "辛苦": "心苦",
+            "完蛋了": "慘啊",
+            "真的假的": "甘有影",
         }
 
     def _contains_chinese(self, text: str) -> bool:
@@ -135,9 +282,35 @@ class SparkTTS:
         # 3. Arabic numeral → Traditional Chinese spoken word conversion
         translated = self._convert_numbers_to_zh(translated)
 
+        # 4. Taiwanese Hokkien / Taiwan localized phonetic replacements (Single-pass Regex to prevent double replacement)
+        if getattr(self, 'use_breeze_speech', False):
+            orig_before_tw = translated
+            sorted_keys = sorted(self.BREEZE_TAIWANESE_MAP.keys(), key=len, reverse=True)
+            pattern = re.compile("|".join(re.escape(k) for k in sorted_keys))
+            translated = pattern.sub(lambda m: self.BREEZE_TAIWANESE_MAP[m.group(0)], translated)
+            if orig_before_tw != translated:
+                print(f"[TTS Breeze Preprocess] '{orig_before_tw}' -> '{translated}'")
+
         if translated != text:
             print(f"[TTS Preprocess] '{text}' -> '{translated}'")
         return translated
+
+    def reload_settings(self):
+        """Reload settings dynamically from settings.json."""
+        import settings_manager
+        settings = settings_manager.load_settings()
+        self.use_breeze_speech = settings.get("use_breeze_speech", False)
+        print(f"[TTS Settings] Reloaded. use_breeze_speech: {self.use_breeze_speech}")
+
+    def synthesize_breezyvoice(self, text: str) -> bytes:
+        """
+        [BreezyVoice API Placeholder]
+        In the future, this will connect to the BreezyVoice model (MOS 5/5 quality)
+        to synthesize high-fidelity Traditional Chinese + Taiwanese speech.
+        """
+        print(f"[BreezyVoice] Simulating speech synthesis for: '{text}'")
+        # Currently falls back to default synthesize method
+        return self.synthesize(text)
 
 
     def _build_bilingual_segments(self, text: str) -> list:

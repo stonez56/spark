@@ -285,6 +285,7 @@ def audio_orchestrator(sm, state_queue, audio_queue, tts_queue, mode_queue, tran
                 if item.get("type") == "settings_update":
                     brain.reload_settings()
                     stt.reload_settings()
+                    tts.reload_settings()
                     _report_mode(state_queue, brain)
             else:
                 new_mode = item
